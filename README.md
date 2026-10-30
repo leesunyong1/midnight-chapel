@@ -3,6 +3,9 @@
 고요한 촛불 아래, 나만의 기도를 봉헌하고 함께 기도하는 **웹 3D 인터랙티브 성당 서비스**입니다.  
 Next.js 16과 React Three Fiber(Three.js)를 기반으로 구축되었으며, 별도의 앱 설치 없이 웹 브라우저에서 3D 캐릭터를 조작하여 개인 기도실과 대성당을 체험할 수 있습니다.
 
+* **🌐 배포 사이트 (Live Demo)**: [https://midnight-chapel.vercel.app](https://midnight-chapel.vercel.app)
+* **🐙 GitHub 저장소**: [https://github.com/leesunyong1/midnight-chapel](https://github.com/leesunyong1/midnight-chapel)
+
 ---
 
 ## 🏛️ 주요 공간 및 기능
