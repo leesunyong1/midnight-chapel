@@ -330,6 +330,7 @@ export default function ChibiCharacterPreview() {
   const [skinColor, setSkinColor] = useState('#fcdcc5'); // 따뜻한 자연 베이지
   const [hairColor, setHairColor] = useState('#382319'); // 다크 브라운
   const [showHair, setShowHair] = useState(false);      // 머리카락 기본 삭제 (치비 민머리)
+  const [eyeStyle, setEyeStyle] = useState<'original' | 'sparkle'>('original'); // 눈 스타일 (기본값: 기존 오리지널 눈)
   const [showEyebrows, setShowEyebrows] = useState(true);
   const [showBlush, setShowBlush] = useState(true);
   const [showMouth, setShowMouth] = useState(true);
@@ -349,6 +350,7 @@ export default function ChibiCharacterPreview() {
       if (saved.skinColor) setSkinColor(saved.skinColor);
       if (saved.hairColor) setHairColor(saved.hairColor);
       if (typeof saved.showHair === 'boolean') setShowHair(saved.showHair);
+      if (saved.eyeStyle) setEyeStyle(saved.eyeStyle);
       if (typeof saved.showEyebrows === 'boolean') setShowEyebrows(saved.showEyebrows);
       if (typeof saved.showBlush === 'boolean') setShowBlush(saved.showBlush);
       if (typeof saved.showMouth === 'boolean') setShowMouth(saved.showMouth);
@@ -365,11 +367,12 @@ export default function ChibiCharacterPreview() {
       skinColor,
       hairColor,
       showHair,
+      eyeStyle,
       showEyebrows,
       showBlush,
       showMouth,
     }),
-    [skinColor, hairColor, showHair, showEyebrows, showBlush, showMouth]
+    [skinColor, hairColor, showHair, eyeStyle, showEyebrows, showBlush, showMouth]
   );
 
   const handleSave = () => {
@@ -382,6 +385,7 @@ export default function ChibiCharacterPreview() {
     setSkinColor(def.skinColor || '#fcdcc5');
     setHairColor(def.hairColor || '#382319');
     setShowHair(false);
+    setEyeStyle('original');
     setShowEyebrows(true);
     setShowBlush(true);
     setShowMouth(true);
@@ -669,6 +673,37 @@ export default function ChibiCharacterPreview() {
                   style={{ backgroundColor: skin.color }}
                 />
               ))}
+            </div>
+          </div>
+
+          {/* 눈 모양 선택 (기존 오리지널 3D 눈 vs 반짝이 눈) */}
+          <div className="pt-2 border-t border-stone-800/60">
+            <span className="text-[10px] text-stone-400 block mb-1.5">눈 스타일</span>
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                onClick={() => setEyeStyle('original')}
+                className={`py-1.5 px-2 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 ${
+                  eyeStyle === 'original'
+                    ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40 font-medium shadow-md'
+                    : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
+                }`}
+              >
+                <span>👀</span>
+                <span>기존 오리지널 눈</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEyeStyle('sparkle')}
+                className={`py-1.5 px-2 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 ${
+                  eyeStyle === 'sparkle'
+                    ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40 font-medium shadow-md'
+                    : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
+                }`}
+              >
+                <span>✨</span>
+                <span>반짝이 눈</span>
+              </button>
             </div>
           </div>
 

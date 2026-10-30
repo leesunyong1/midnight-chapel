@@ -11,6 +11,8 @@ export interface ChibiCustomizationOptions {
   hairColor?: string;
   /** 머리카락 표면 거칠기 (기본값: 0.58) */
   hairRoughness?: number;
+  /** 눈 스타일: 'original' (기존 오리지널 3D 입체 눈) | 'sparkle' (반짝이는 하이라이트 눈) (기본값: 'original') */
+  eyeStyle?: 'original' | 'sparkle';
   /** 눈동자 메인 색상 (기본값: 딥 에스프레소 #221c26) */
   eyeColor?: string;
   /** 눈 깜빡임 주기 범위 [최소초, 최대초] (기본값: [3.5, 6.0]) */
@@ -304,18 +306,27 @@ export function setupChibiCharacterStyling(
     hairColor = '#382319', // 깊고 부드러운 다크 브라운
     hairRoughness = 0.58,
     showHair = false,      // 머리카락 기본 삭제 (치비 민머리)
+    eyeStyle = 'original', // 눈 스타일 (기본값: 기존 오리지널 3D 입체 눈)
     blinkInterval = [3.5, 6.0],
     showEyebrows = true,
     showBlush = true,
     showMouth = true,
   } = options;
 
-  // 1. 기존 피부 머티리얼 수정 (핑크/보라색 -> 따뜻한 자연 베이지)
+  // 1. 기존 피부 머티리얼 및 오리지널 3D 눈 메쉬 설정
   const skinMaterial = new THREE.MeshStandardMaterial({
     color: new THREE.Color(skinColor),
     roughness: skinRoughness,
     metalness: 0.02,
   });
+
+  const originalEyeMaterial = new THREE.MeshStandardMaterial({
+    color: new THREE.Color('#16121a'), // 깊고 부드러운 블랙
+    roughness: 0.18,
+    metalness: 0.04,
+  });
+
+  let originalEyeMesh: THREE.SkinnedMesh | null = null;
 
   clonedScene.traverse((child: any) => {
     if (child.isSkinnedMesh) {
@@ -325,8 +336,11 @@ export function setupChibiCharacterStyling(
         child.castShadow = true;
         child.receiveShadow = true;
       } else if (child.name === 'Object_9') {
-        // 기존 밋밋한 검은 점 눈은 숨기고, 신규 입체 눈 시스템으로 대체
-        child.visible = false;
+        // 기존 오리지널 3D 눈 메쉬
+        originalEyeMesh = child;
+        child.material = originalEyeMaterial;
+        child.castShadow = true;
+        child.visible = eyeStyle === 'original';
       }
     }
   });
@@ -402,12 +416,14 @@ export function setupChibiCharacterStyling(
   const leftEye = new THREE.Mesh(eyeGeo, leftEyeMat);
   leftEye.position.set(-0.040, 0.098, 0.136);
   leftEye.rotation.set(0, -0.16, 0);
+  leftEye.visible = eyeStyle !== 'original';
   headGroup.add(leftEye);
 
   // 우측 눈
   const rightEye = new THREE.Mesh(eyeGeo, rightEyeMat);
   rightEye.position.set(0.040, 0.098, 0.136);
   rightEye.rotation.set(0, 0.16, 0);
+  rightEye.visible = eyeStyle !== 'original';
   headGroup.add(rightEye);
 
   // 6. 눈썹 (Eyebrows)
@@ -489,30 +505,61 @@ export function setupChibiCharacterStyling(
       const progress = blinkTimer / BLINK_DURATION;
 
       if (progress < 1.0) {
-        // 눈 감았다 뜨기 (Sine 곡선으로 scale.y 수축)
         const closeFactor = Math.sin(progress * Math.PI);
-        const scaleY = Math.max(0.08, 1.0 - closeFactor * 0.92);
-        leftEye.scale.y = scaleY;
-        rightEye.scale.y = scaleY;
+        const useClosed = closeFactor > 0.45;
 
-        // 눈이 거의 감겼을 때는 감은 눈 텍스처(속눈썹 호)로 자연스럽게 스왑
-        const useClosed = closeFactor > 0.55;
-        if (leftEyeMat.map !== (useClosed ? closedEyeTex : openEyeTex)) {
-          leftEyeMat.map = useClosed ? closedEyeTex : openEyeTex;
-          rightEyeMat.map = useClosed ? closedEyeTex : openEyeTex;
-          leftEyeMat.needsUpdate = true;
-          rightEyeMat.needsUpdate = true;
+        if (eyeStyle === 'original') {
+          // 기존 오리지널 3D 눈: 눈을 감는 순간(140ms 중 피크 구간)만 감은 눈 호선으로 스왑
+          if (originalEyeMesh) {
+            originalEyeMesh.visible = !useClosed;
+          }
+          leftEye.visible = useClosed;
+          rightEye.visible = useClosed;
+          if (useClosed) {
+            leftEyeMat.map = closedEyeTex;
+            rightEyeMat.map = closedEyeTex;
+            leftEyeMat.needsUpdate = true;
+            rightEyeMat.needsUpdate = true;
+            leftEye.scale.y = 1.0;
+            rightEye.scale.y = 1.0;
+          }
+        } else {
+          // 반짝이 입체 눈: Sine 곡선으로 scale.y 수축 및 감은 눈 텍스처 스왑
+          if (originalEyeMesh) {
+            originalEyeMesh.visible = false;
+          }
+          leftEye.visible = true;
+          rightEye.visible = true;
+          const scaleY = Math.max(0.08, 1.0 - closeFactor * 0.92);
+          leftEye.scale.y = scaleY;
+          rightEye.scale.y = scaleY;
+
+          if (leftEyeMat.map !== (useClosed ? closedEyeTex : openEyeTex)) {
+            leftEyeMat.map = useClosed ? closedEyeTex : openEyeTex;
+            rightEyeMat.map = useClosed ? closedEyeTex : openEyeTex;
+            leftEyeMat.needsUpdate = true;
+            rightEyeMat.needsUpdate = true;
+          }
         }
       } else {
         // 깜빡임 완료 -> 완전 개안 복원
         isBlinking = false;
-        leftEye.scale.y = 1.0;
-        rightEye.scale.y = 1.0;
-        leftEyeMat.map = openEyeTex;
-        rightEyeMat.map = openEyeTex;
-        leftEyeMat.needsUpdate = true;
-        rightEyeMat.needsUpdate = true;
-        // 다음 깜빡임 간격 랜덤 재계산 (너무 자주 깜빡이지 않도록 3.5s ~ 6.0s)
+        if (eyeStyle === 'original') {
+          if (originalEyeMesh) originalEyeMesh.visible = true;
+          leftEye.visible = false;
+          rightEye.visible = false;
+        } else {
+          if (originalEyeMesh) originalEyeMesh.visible = false;
+          leftEye.visible = true;
+          rightEye.visible = true;
+          leftEye.scale.y = 1.0;
+          rightEye.scale.y = 1.0;
+          leftEyeMat.map = openEyeTex;
+          rightEyeMat.map = openEyeTex;
+          leftEyeMat.needsUpdate = true;
+          rightEyeMat.needsUpdate = true;
+        }
+        // 다음 깜빡임 간격 랜덤 재계산 (3.5s ~ 6.0s)
         timeUntilNextBlink =
           blinkInterval[0] + Math.random() * (blinkInterval[1] - blinkInterval[0]);
       }

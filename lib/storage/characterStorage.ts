@@ -11,6 +11,7 @@ export const DEFAULT_CHARACTER_CUSTOMIZATION: ChibiCustomizationOptions = {
   hairColor: '#382319',
   hairRoughness: 0.58,
   showHair: false,      // 머리카락 기본 삭제 (단정한 치비 민머리)
+  eyeStyle: 'original', // 눈 스타일 기본값: 기존 오리지널 3D 눈
   showEyebrows: true,
   showBlush: true,
   showMouth: true,
@@ -30,6 +31,7 @@ export function getCharacterCustomization(): ChibiCustomizationOptions {
   return {
     ...DEFAULT_CHARACTER_CUSTOMIZATION,
     ...saved,
+    eyeStyle: (saved.eyeStyle as any) || 'original',
     // 머리카락은 명시적으로 true가 아닌 한 기본 false 유지
     showHair: Boolean(saved.showHair),
   };
@@ -55,3 +57,4 @@ export function resetCharacterCustomization(): ChibiCustomizationOptions {
   safeSetItem(STORAGE_KEYS.CHARACTER, DEFAULT_CHARACTER_CUSTOMIZATION);
   return { ...DEFAULT_CHARACTER_CUSTOMIZATION };
 }
+
