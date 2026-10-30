@@ -39,7 +39,11 @@ export default function PrivatePrayer3DCanvas() {
 
   // 캐릭터 실시간 위치
   const playerPosRef = useRef(new THREE.Vector3(0, 0, 4.0));
+  const [coords, setCoords] = useState({ x: 0, z: 4.0 });
   const [nearAltar, setNearAltar] = useState(false);
+
+  // 모바일/데스크탑 조작 안내 박스 표시 상태 (X 클릭으로 닫기 가능)
+  const [showGuide, setShowGuide] = useState(true);
 
   // 촛불 및 기도문 상태 관리 (기존 스토리지 재사용)
   const [candle, setCandle] = useState<CandleState | null>(null);
@@ -131,10 +135,17 @@ export default function PrivatePrayer3DCanvas() {
     showToast('기도문이 삭제되었습니다.');
   };
 
+  const lastCoordsUpdate = useRef(0);
   const handlePlayerPosChange = useCallback((pos: THREE.Vector3) => {
     playerPosRef.current.copy(pos);
     // 개인 기도대 및 제단 접근 거리 감지 (Z < -2.6)
     setNearAltar(pos.z < -2.6);
+
+    const now = performance.now();
+    if (now - lastCoordsUpdate.current > 150) {
+      lastCoordsUpdate.current = now;
+      setCoords({ x: Number(pos.x.toFixed(1)), z: Number(pos.z.toFixed(1)) });
+    }
   }, []);
 
   const isLit = candle?.isLit ?? true;
@@ -219,22 +230,30 @@ export default function PrivatePrayer3DCanvas() {
           <span>성당 입구</span>
         </Link>
 
-        {/* 중앙 상단: 타이틀 */}
+        {/* 중앙 상단: 타이틀 (성당 사이즈 표기 제거) */}
         <div className="text-center">
           <span className="block text-[10px] tracking-[0.3em] uppercase text-amber-400/80 font-light">
-            Midnight Sanctuary (12m × 16m)
+            Midnight Sanctuary
           </span>
           <h1 className="text-sm font-extralight text-stone-200 tracking-wider">
             개인 기도실
           </h1>
         </div>
 
-        {/* 우측 나의 기도 기록 서랍 버튼 */}
+        {/* 우측 상단: 실시간 좌표 및 나의 기도 기록 서랍 버튼 */}
         <div className="pointer-events-auto flex items-center gap-2">
+          {/* 우측 상단 실시간 좌표 */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-stone-800/80 bg-stone-950/60 backdrop-blur-md text-[11px] text-stone-300 shadow-xl">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-stone-400 font-mono">
+              X: {coords.x}m / Z: {coords.z}m
+            </span>
+          </div>
+
           <button
             type="button"
             onClick={() => setIsHistoryDrawerOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-full border border-stone-800 bg-stone-900/80 backdrop-blur-md px-3.5 py-2 text-xs font-light text-stone-300 hover:text-amber-300 hover:border-amber-500/30 transition-all active:scale-95 shadow-xl"
+            className="inline-flex items-center gap-1.5 rounded-full border border-stone-800 bg-stone-900/80 backdrop-blur-md px-3.5 py-1.5 text-xs font-light text-stone-300 hover:text-amber-300 hover:border-amber-500/30 transition-all active:scale-95 shadow-xl"
           >
             <svg
               width="14"
@@ -321,35 +340,54 @@ export default function PrivatePrayer3DCanvas() {
           <JumpButton onJump={() => { jumpRef.current = true; }} />
         </div>
 
-        <div className="rounded-2xl border border-stone-800/80 bg-stone-950/75 backdrop-blur-md px-4 py-2.5 text-xs text-stone-400 shadow-xl space-y-1.5">
-          <p className="flex items-center gap-1.5 flex-wrap">
-            <span className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 rounded bg-stone-800 text-[10px] text-amber-300 font-mono">
-                W
-              </kbd>
-              <kbd className="px-1.5 py-0.5 rounded bg-stone-800 text-[10px] text-amber-300 font-mono">
-                A
-              </kbd>
-              <kbd className="px-1.5 py-0.5 rounded bg-stone-800 text-[10px] text-amber-300 font-mono">
-                S
-              </kbd>
-              <kbd className="px-1.5 py-0.5 rounded bg-stone-800 text-[10px] text-amber-300 font-mono">
-                D
-              </kbd>
-            </span>
-            <span className="text-[11px] text-stone-300">/ 방향키 : 이동 · </span>
-            <kbd className="px-1.5 py-0.5 rounded bg-stone-800 text-[10px] text-amber-300 font-mono">
-              Space
-            </kbd>
-            <span className="text-[11px] text-stone-300">: 점프</span>
-          </p>
-          <p className="text-[10px] text-stone-400 font-light flex items-center gap-1.5">
-            <span className="text-amber-400/90 font-medium">마우스 드래그</span> 360° 회전 · <span className="text-amber-400/90 font-medium">휠 스크롤</span> 줌인/아웃
-          </p>
-          <p className="text-[10px] text-stone-500 font-light">
-            기도대 앞: <kbd className="text-amber-400 font-mono">E</kbd> 키로 기도문 봉헌
-          </p>
-        </div>
+        {/* 조작 간단 설명 박스 (은은한 반투명 오파시티 + X 닫기 지원) */}
+        {showGuide ? (
+          <div className="rounded-2xl border border-white/10 bg-stone-950/45 backdrop-blur-md px-4 py-3 text-xs text-stone-300 shadow-2xl space-y-2 max-w-xs animate-fade-in pointer-events-auto">
+            <div className="flex items-center justify-between pb-1.5 border-b border-white/10">
+              <span className="text-[11px] font-medium text-amber-300/90 flex items-center gap-1.5">
+                <span>🕯️</span>
+                <span>조작 안내</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowGuide(false)}
+                className="w-5 h-5 rounded-full flex items-center justify-center text-stone-400 hover:text-white hover:bg-white/10 transition-colors text-xs"
+                aria-label="조작 안내 닫기"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-1 text-[11px] text-stone-300/90">
+              <p className="flex items-center justify-between">
+                <span className="text-stone-400">이동</span>
+                <span className="font-mono text-stone-200">WASD / 조이스틱</span>
+              </p>
+              <p className="flex items-center justify-between">
+                <span className="text-stone-400">점프</span>
+                <span className="font-mono text-stone-200">Space / 점프 버튼</span>
+              </p>
+              <p className="flex items-center justify-between">
+                <span className="text-stone-400">시점</span>
+                <span>화면 드래그 (360°)</span>
+              </p>
+              {nearAltar && (
+                <p className="flex items-center justify-between text-amber-300 pt-1 border-t border-white/10">
+                  <span>기도 봉헌</span>
+                  <span>E 키 / 버튼 탭</span>
+                </p>
+              )}
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowGuide(true)}
+            className="pointer-events-auto px-3 py-1.5 rounded-full border border-white/10 bg-stone-950/45 backdrop-blur-md text-[11px] text-stone-400 hover:text-stone-200 transition-all shadow-lg active:scale-95"
+            title="조작 안내 열기"
+          >
+            💡 조작 안내
+          </button>
+        )}
       </footer>
 
       {/* ========================================================

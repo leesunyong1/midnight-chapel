@@ -43,8 +43,8 @@ export default function CommunityPrayer3DCanvas() {
     speed: 0,
   });
 
-  // 스폰 마커 시각화 표시 여부
-  const [showSpawnMarkers, setShowSpawnMarkers] = useState(true);
+  // 모바일/데스크탑 조작 안내 박스 표시 상태 (사용자가 X를 눌러 닫을 수 있음)
+  const [showGuide, setShowGuide] = useState(true);
 
   // 토스트 메시지
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -68,20 +68,6 @@ export default function CommunityPrayer3DCanvas() {
       setPlayerInfo(info);
     }
   }, []);
-
-  // 특정 스폰 지점으로 캐릭터 리스폰(재배치)
-  const handleRespawn = (targetPoint: SpawnPoint) => {
-    setCurrentSpawn(targetPoint);
-    playerPosRef.current.set(targetPoint.x, 0, targetPoint.z);
-    setPlayerInfo((prev) => ({ ...prev, x: targetPoint.x, z: targetPoint.z }));
-    showToast(`스폰 #${targetPoint.id + 1} (X: ${targetPoint.x}m, Z: ${targetPoint.z}m)로 이동했습니다.`);
-  };
-
-  // 랜덤 미사용 스폰 지점 선택
-  const handleRandomRespawn = () => {
-    const randomIdx = Math.floor(Math.random() * COMMUNITY_SPAWN_POINTS.length);
-    handleRespawn(COMMUNITY_SPAWN_POINTS[randomIdx]);
-  };
 
   // 안정적인 스폰 좌표 배열 인스턴스 (메모이제이션)
   const initialPos = useMemo<[number, number, number]>(
@@ -135,9 +121,9 @@ export default function CommunityPrayer3DCanvas() {
           color="#38bdf8"
         />
 
-        {/* 3D 공동 대성당 내부 건축물 (30m × 45m × 20m) */}
+        {/* 3D 공동 대성당 내부 건축물 */}
         <CommunityCathedralScene
-          showSpawnMarkers={showSpawnMarkers}
+          showSpawnMarkers={false}
           selectedSpawnId={currentSpawn.id}
         />
 
@@ -200,55 +186,28 @@ export default function CommunityPrayer3DCanvas() {
           </Link>
         </div>
 
-        {/* 중앙 상단 타이틀 */}
+        {/* 중앙 상단 타이틀 (성당 사이즈 표기 제거) */}
         <div className="text-center">
           <span className="block text-[10px] tracking-[0.3em] uppercase text-sky-400/80 font-light">
-            Grand Cathedral (30m × 45m × 20m)
+            Grand Cathedral
           </span>
           <h1 className="text-sm font-extralight text-stone-200 tracking-wider">
             공동 기도실
           </h1>
         </div>
 
-        {/* 우측 스폰 지점 컨트롤 버튼들 */}
+        {/* 우측 상단: 실시간 좌표 및 현재 구역 뱃지 */}
         <div className="pointer-events-auto flex items-center gap-2">
-          {/* 스폰 마커 표시/숨김 토글 */}
-          <button
-            type="button"
-            onClick={() => setShowSpawnMarkers(!showSpawnMarkers)}
-            className={`px-3 py-1.5 rounded-full border text-xs font-light transition-all active:scale-95 shadow-xl ${
-              showSpawnMarkers
-                ? 'bg-sky-500/20 text-sky-300 border-sky-500/40'
-                : 'bg-stone-900/80 text-stone-400 border-stone-800 hover:text-stone-200'
-            }`}
-          >
-            <span>{showSpawnMarkers ? '📍 60개 스폰 마커 켜짐' : '📍 스폰 마커 숨김'}</span>
-          </button>
-
-          {/* 랜덤 스폰 테스트 버튼 */}
-          <button
-            type="button"
-            onClick={handleRandomRespawn}
-            className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 px-3.5 py-1.5 text-xs font-light text-amber-300 transition-all active:scale-95 shadow-xl"
-          >
-            <span>🎲 다른 스폰 지점 이동</span>
-          </button>
+          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-stone-800/80 bg-stone-950/60 backdrop-blur-md text-[11px] text-stone-300 shadow-xl">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-stone-400 font-mono">
+              X: {playerInfo.x}m / Z: {playerInfo.z}m
+            </span>
+            <span className="text-stone-600 hidden sm:inline">|</span>
+            <span className="text-sky-300/90 font-light hidden sm:inline">{currentZone}</span>
+          </div>
         </div>
       </header>
-
-      {/* ========================================================
-          중앙 상단 현재 위치 & 구역 배너
-          ======================================================== */}
-      <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none animate-fade-in flex flex-col items-center gap-1">
-        <div className="flex items-center gap-2.5 px-4 py-1.5 rounded-full border border-stone-800 bg-stone-950/80 backdrop-blur-md text-[11px] text-stone-300 shadow-xl">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-stone-400 font-mono">
-            X: {playerInfo.x}m / Z: {playerInfo.z}m
-          </span>
-          <span className="text-stone-600">|</span>
-          <span className="text-sky-300 font-light">{currentZone}</span>
-        </div>
-      </div>
 
       {/* ========================================================
           하단 조작부: 모바일 가상 조이스틱 (좌측 하단)
@@ -262,54 +221,56 @@ export default function CommunityPrayer3DCanvas() {
       </div>
 
       {/* ========================================================
-          하단 조작 가이드 & 공동실 제원 안내 (우측 하단)
+          하단 조작 가이드 & 액션 (우측 하단: 은은한 반투명 + X 닫기 지원)
           ======================================================== */}
       <footer className="absolute bottom-6 right-6 z-20 flex flex-col items-end gap-2.5 pointer-events-none">
-        {/* 모바일 터치 점프 버튼 */}
+        {/* 점프 액션 버튼 (모바일 및 터치 환경 지원) */}
         <div className="pointer-events-auto">
           <JumpButton onJump={() => { jumpRef.current = true; }} />
         </div>
 
-        <div className="rounded-2xl border border-stone-800/80 bg-stone-950/80 backdrop-blur-md px-4 py-3 text-xs text-stone-400 shadow-xl space-y-1.5 max-w-sm">
-          <div className="flex items-center justify-between pb-1 border-b border-stone-800/60">
-            <span className="text-[11px] font-medium text-sky-400">
-              🏛️ 공동 대성당 실시간 이동
-            </span>
-            <span className="text-[10px] text-stone-500 font-mono">
-              스폰 #{currentSpawn.id + 1} / 60
-            </span>
+        {/* 조작 간단 설명 박스 (은은한 오파시티 백그라운드 + X 닫기 버튼) */}
+        {showGuide ? (
+          <div className="rounded-2xl border border-white/10 bg-stone-950/45 backdrop-blur-md px-4 py-3 text-xs text-stone-300 shadow-2xl space-y-2 max-w-xs animate-fade-in pointer-events-auto">
+            <div className="flex items-center justify-between pb-1.5 border-b border-white/10">
+              <span className="text-[11px] font-medium text-sky-300 flex items-center gap-1.5">
+                <span>🏛️</span>
+                <span>조작 안내</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowGuide(false)}
+                className="w-5 h-5 rounded-full flex items-center justify-center text-stone-400 hover:text-white hover:bg-white/10 transition-colors text-xs"
+                aria-label="조작 안내 닫기"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-1 text-[11px] text-stone-300/90">
+              <p className="flex items-center justify-between">
+                <span className="text-stone-400">이동</span>
+                <span className="font-mono text-stone-200">WASD / 조이스틱</span>
+              </p>
+              <p className="flex items-center justify-between">
+                <span className="text-stone-400">점프</span>
+                <span className="font-mono text-stone-200">Space / 점프 버튼</span>
+              </p>
+              <p className="flex items-center justify-between">
+                <span className="text-stone-400">시점</span>
+                <span>화면 드래그 (360°)</span>
+              </p>
+            </div>
           </div>
-          <p className="flex items-center gap-1.5 flex-wrap">
-            <span className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 rounded bg-stone-800 text-[10px] text-sky-300 font-mono">
-                W
-              </kbd>
-              <kbd className="px-1.5 py-0.5 rounded bg-stone-800 text-[10px] text-sky-300 font-mono">
-                A
-              </kbd>
-              <kbd className="px-1.5 py-0.5 rounded bg-stone-800 text-[10px] text-sky-300 font-mono">
-                S
-              </kbd>
-              <kbd className="px-1.5 py-0.5 rounded bg-stone-800 text-[10px] text-sky-300 font-mono">
-                D
-              </kbd>
-            </span>
-            <span className="text-[11px] text-stone-300">/ 방향키 : 이동 · </span>
-            <kbd className="px-1.5 py-0.5 rounded bg-stone-800 text-[10px] text-sky-300 font-mono">
-              Space
-            </kbd>
-            <span className="text-[11px] text-stone-300">: 점프</span>
-          </p>
-          <p className="text-[10px] text-stone-400 font-light">
-            • <strong className="text-stone-300">5.6m 중앙 통로</strong>와 양측 측랑을 자유롭게 이동
-          </p>
-          <p className="text-[10px] text-stone-400 font-light">
-            • 좌우 장의자 16개 & 석조 기둥 12개 자연스러운 <strong className="text-stone-300">슬라이딩 충돌</strong> 적용
-          </p>
-          <p className="text-[10px] text-stone-500 font-light">
-            • 기둥과 장의자 사이 0.4m 틈새 통행 차단 완료
-          </p>
-        </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowGuide(true)}
+            className="pointer-events-auto px-3 py-1.5 rounded-full border border-white/10 bg-stone-950/45 backdrop-blur-md text-[11px] text-stone-400 hover:text-stone-200 transition-all shadow-lg active:scale-95"
+            title="조작 안내 열기"
+          >
+            💡 조작 안내
+          </button>
+        )}
       </footer>
 
       {/* 토스트 알림 */}

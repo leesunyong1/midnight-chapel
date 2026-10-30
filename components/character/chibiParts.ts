@@ -328,11 +328,21 @@ export function setupChibiCharacterStyling(
     }
   });
 
-  // 2. Head_06 본 찾기
+  // 2. 주요 본 찾기 및 팔 비율 최적화 (치비 체형에 어울리도록 팔 길이 약 15% 단축)
   let headBone: THREE.Bone | null = null;
+  const ARM_SCALE_X = 0.85;
+
   clonedScene.traverse((child: any) => {
-    if (child.isBone && child.name === 'Head_06') {
-      headBone = child;
+    if (child.isBone) {
+      if (child.name === 'Head_06') {
+        headBone = child;
+      } else if (child.name === 'Left_Arm_017' || child.name === 'RightArm_09') {
+        // 팔 본의 길이 방향(X축)을 살짝 축소하여 긴 팔을 깜찍한 치비 비율로 보정
+        child.scale.x = ARM_SCALE_X;
+      } else if (child.name === 'Left_Hand_019' || child.name === 'RightHand_011') {
+        // 손 모양이 납작해지지 않도록 역보정하여 동글동글한 손 크기 보존
+        child.scale.x = 1 / ARM_SCALE_X;
+      }
     }
   });
 

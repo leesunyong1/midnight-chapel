@@ -46,8 +46,12 @@ export default function VirtualJoystick({ onMove }: VirtualJoystickProps) {
 
   const handlePointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
+    // 이미 다른 손가락으로 조이스틱을 조작 중이면 무시 (멀티터치 보호)
+    if (activePointerId.current !== null) return;
     activePointerId.current = e.pointerId;
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    try {
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    } catch (_) {}
     setIsActive(true);
     updatePosition(e.clientX, e.clientY);
   };
@@ -59,6 +63,9 @@ export default function VirtualJoystick({ onMove }: VirtualJoystickProps) {
 
   const handlePointerUp = (e: React.PointerEvent) => {
     if (activePointerId.current === e.pointerId) {
+      try {
+        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch (_) {}
       activePointerId.current = null;
       setIsActive(false);
       setKnobPos({ x: 0, y: 0 });
@@ -66,10 +73,10 @@ export default function VirtualJoystick({ onMove }: VirtualJoystickProps) {
     }
   };
 
-  // 윈도우 포인터 업 대비
+  // 윈도우 포인터 업 대비 (모바일 점프 버튼 터치 해제 시 조이스틱이 초기화되는 버그 방지)
   useEffect(() => {
-    const handleGlobalUp = () => {
-      if (activePointerId.current !== null) {
+    const handleGlobalUp = (e: PointerEvent) => {
+      if (activePointerId.current !== null && e.pointerId === activePointerId.current) {
         activePointerId.current = null;
         setIsActive(false);
         setKnobPos({ x: 0, y: 0 });
