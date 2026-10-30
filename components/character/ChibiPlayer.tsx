@@ -6,6 +6,11 @@ import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import {
+  setupChibiCharacterStyling,
+  ChibiFaceController,
+  ChibiCustomizationOptions,
+} from './chibiParts';
+import {
   Collider,
   RoomBounds,
   resolveSlidingMovement,
@@ -37,6 +42,8 @@ export interface ChibiPlayerProps {
   initialRotationY?: number;
   /** 캐릭터 충돌 반경 (기본값: 0.35m) */
   playerRadius?: number;
+  /** 캐릭터 외형 커스터마이징 옵션 (스킨 톤, 헤어 색상, 표정 등) */
+  customization?: ChibiCustomizationOptions;
 }
 
 // 기본 이동 제약 경계 (하위 호환성 유지)
@@ -89,8 +96,12 @@ export default function ChibiPlayer({
   initialPosition = [0, 0, 2.2],
   initialRotationY = Math.PI,
   playerRadius = 0.35,
+  customization,
 }: ChibiPlayerProps) {
   const { scene } = useGLTF('/character/chibi.glb');
+
+  // 얼굴 표정 및 눈 깜빡임 제어 컨트롤러 참조
+  const faceControllerRef = useRef<ChibiFaceController | null>(null);
 
   // SkinnedMesh 및 본(Bone) 계층을 완벽히 복제하기 위해 SkeletonUtils.clone 사용
   // 향후 다중 플레이어 스폰 시에도 캐릭터별 독립적인 Skeleton 인스턴스를 유지합니다.
@@ -102,8 +113,12 @@ export default function ChibiPlayer({
         child.receiveShadow = true;
       }
     });
+
+    // 1단계 외형 리디자인: 피부 톤, 3D 볼륨 헤어, 입체 눈 & 실시간 깜빡임, 표정 파츠 장착
+    faceControllerRef.current = setupChibiCharacterStyling(clone, customization);
+
     return clone;
-  }, [scene]);
+  }, [scene, customization]);
 
   // 캐릭터별 독립적인 Bone 참조 및 Rest Pose Quaternion 캐싱
   const bones = useMemo<BoneMap>(() => {
@@ -325,6 +340,11 @@ export default function ChibiPlayer({
 
     // 델타 타임 제한 (탭 전환 시 급발진 방지)
     const dt = Math.min(delta, 0.1);
+
+    // 얼굴 표정 및 자연스러운 눈 깜빡임 실시간 업데이트
+    if (faceControllerRef.current) {
+      faceControllerRef.current.update(dt);
+    }
 
     // 0. 점프 입력 확인 및 수직 도약 처리 (스페이스바 및 모바일 점프 버튼)
     const wantsJump = activeKeys.current.jump || (jumpRef && jumpRef.current);

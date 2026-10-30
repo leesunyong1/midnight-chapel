@@ -1,64 +1,248 @@
 'use client';
 
-import { Suspense, useRef, useState, useEffect } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Suspense, useRef, useState, useEffect, useMemo } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import Link from 'next/link';
+import {
+  setupChibiCharacterStyling,
+  ChibiFaceController,
+  ChibiCustomizationOptions,
+} from './chibiParts';
 
-// 캐릭터 3D 모델 컴포넌트
-function ChibiModel({
+type MotionMode = 'static' | 'idle' | 'walk' | 'jump';
+type CameraAnglePreset = 'front' | 'quarter' | 'side' | 'back' | 'custom';
+
+interface BoneEntry {
+  bone: THREE.Bone;
+  restQuat: THREE.Quaternion;
+}
+type BoneMap = Record<string, BoneEntry>;
+
+const scratchEuler = new THREE.Euler(0, 0, 0, 'XYZ');
+const scratchQuat = new THREE.Quaternion();
+
+function applyBoneRotation(
+  entry: BoneEntry | undefined,
+  x: number,
+  y: number,
+  z: number
+) {
+  if (!entry) return;
+  scratchEuler.set(x, y, z, 'XYZ');
+  scratchQuat.setFromEuler(scratchEuler);
+  entry.bone.quaternion.copy(entry.restQuat).multiply(scratchQuat);
+}
+
+// ---------------------------------------------------------------------------
+// 3D 치비 모델 프리뷰 컴포넌트
+// ---------------------------------------------------------------------------
+function ChibiPreviewModel({
   wireframe,
   showSkeleton,
   autoRotate,
+  motionMode,
+  customization,
 }: {
   wireframe: boolean;
   showSkeleton: boolean;
   autoRotate: boolean;
+  motionMode: MotionMode;
+  customization: ChibiCustomizationOptions;
 }) {
   const { scene } = useGLTF('/character/chibi.glb');
   const groupRef = useRef<THREE.Group>(null);
   const skeletonHelperRef = useRef<THREE.SkeletonHelper | null>(null);
+  const faceControllerRef = useRef<ChibiFaceController | null>(null);
 
-  // 머티리얼 와이어프레임 및 그림자 설정
-  useEffect(() => {
-    scene.traverse((child: any) => {
+  // 애니메이션 타이머
+  const timerRef = useRef(0);
+
+  // 캐릭터 독립 클론 및 1단계 스타일링 파츠 부착
+  const clonedScene = useMemo(() => {
+    const clone = SkeletonUtils.clone(scene);
+    clone.traverse((child: any) => {
       if (child.isMesh) {
         child.castShadow = true;
         child.receiveShadow = true;
-        if (child.material) {
-          if (Array.isArray(child.material)) {
-            child.material.forEach((mat: any) => {
-              mat.wireframe = wireframe;
-            });
-          } else {
-            child.material.wireframe = wireframe;
-          }
+      }
+    });
+
+    // 1단계 외형 리디자인: 피부, 3D 헤어 볼륨, 반짝이는 눈 & 눈깜빡임, 볼터치, 미소 입
+    faceControllerRef.current = setupChibiCharacterStyling(clone, customization);
+
+    return clone;
+  }, [scene, customization]);
+
+  // 본 맵 캐싱
+  const bones = useMemo<BoneMap>(() => {
+    const map: BoneMap = {};
+    clonedScene.traverse((child: any) => {
+      if (child.isBone) {
+        map[child.name] = {
+          bone: child,
+          restQuat: child.quaternion.clone(),
+        };
+      }
+    });
+    return map;
+  }, [clonedScene]);
+
+  // 와이어프레임 토글 처리
+  useEffect(() => {
+    clonedScene.traverse((child: any) => {
+      if (child.isMesh && child.material) {
+        if (Array.isArray(child.material)) {
+          child.material.forEach((mat: any) => {
+            mat.wireframe = wireframe;
+          });
+        } else {
+          child.material.wireframe = wireframe;
         }
       }
     });
-  }, [scene, wireframe]);
+  }, [clonedScene, wireframe]);
 
-  // 스켈레톤 헬퍼 생성 및 업데이트
+  // 스켈레톤 헬퍼
   useEffect(() => {
     if (showSkeleton && groupRef.current) {
-      const helper = new THREE.SkeletonHelper(scene);
+      const helper = new THREE.SkeletonHelper(clonedScene);
       skeletonHelperRef.current = helper;
     } else {
       skeletonHelperRef.current = null;
     }
-  }, [showSkeleton, scene]);
+  }, [showSkeleton, clonedScene]);
 
-  // 자동 회전
+  // 실시간 모션 & 얼굴 표정 업데이트 루프
   useFrame((_, delta) => {
+    const dt = Math.min(delta, 0.1);
+    timerRef.current += dt;
+    const t = timerRef.current;
+
+    // 1. 얼굴 표정 & 자연스러운 눈 깜빡임 (모든 모션 모드에서 유기적 작동)
+    if (faceControllerRef.current) {
+      faceControllerRef.current.update(dt);
+    }
+
+    // 2. 자동 회전
     if (autoRotate && groupRef.current) {
-      groupRef.current.rotation.y += delta * 0.5;
+      groupRef.current.rotation.y += dt * 0.55;
+    }
+
+    // 3. 관절 모션 적용
+    if (motionMode === 'static') {
+      // A-Pose 정지 자세 (기본 Rest 자세 복원)
+      Object.values(bones).forEach((entry) => {
+        entry.bone.quaternion.copy(entry.restQuat);
+      });
+      return;
+    }
+
+    if (motionMode === 'idle') {
+      // 자연스러운 정지 대기: 호흡, 은은한 스웨이, 고개 끄덕임, 옆구리로 내려놓은 팔
+      const breathPhase = t * 2.1;
+      const breath = Math.sin(breathPhase);
+      const sway = Math.sin(t * 1.05);
+
+      // 다리 & 발 (바닥에 편안하게 접지)
+      applyBoneRotation(bones['Left_UpLeg_00'], 0, 0, 0);
+      applyBoneRotation(bones['RightUpLeg_024'], 0, 0, 0);
+      applyBoneRotation(bones['Left_Leg_028'], 0, 0, 0);
+      applyBoneRotation(bones['RightLeg_025'], 0, 0, 0);
+      applyBoneRotation(bones['Left_Foot_029'], 0, 0, 0);
+      applyBoneRotation(bones['RightFoot_026'], 0, 0, 0);
+
+      // 팔: 양옆으로 자연스럽게 내리고 편안하게 호흡에 맞춰 흔들림
+      const leftArmIdleZ = 0.82 + sway * 0.015;
+      const rightArmIdleZ = -0.82 - sway * 0.015;
+      const leftArmIdleY = -breath * 0.015;
+      const rightArmIdleY = breath * 0.015;
+      applyBoneRotation(bones['Left_Arm_017'], 0, leftArmIdleY, leftArmIdleZ);
+      applyBoneRotation(bones['RightArm_09'], 0, rightArmIdleY, rightArmIdleZ);
+
+      // 팔꿈치 안쪽으로 살짝 모으기
+      applyBoneRotation(bones['Left_ForeArm_018'], 0, -0.12 + breath * 0.01, 0);
+      applyBoneRotation(bones['RightForeArm_010'], 0, 0.12 - breath * 0.01, 0);
+
+      // 골반 & 척추
+      applyBoneRotation(bones['Hips_01'], 0, sway * 0.015, breath * 0.008);
+      applyBoneRotation(bones['Spine_02'], 0, -sway * 0.010, breath * 0.020);
+      applyBoneRotation(bones['Spine1_03'], 0, 0, breath * 0.008);
+      applyBoneRotation(bones['Spine2_04'], 0, 0, breath * 0.008);
+
+      // 목 & 머리 (헤어와 얼굴 파츠가 Head 본을 따라 자연스럽게 끄덕임)
+      applyBoneRotation(bones['Neck_05'], 0, sway * 0.008, -breath * 0.012);
+      applyBoneRotation(bones['Head_06'], Math.cos(t * 0.8) * 0.02, 0, -breath * 0.010);
+    } else if (motionMode === 'walk') {
+      // 씩씩한 제자리 걷기 모션
+      const walkSpeed = 9.0;
+      const phase = t * walkSpeed;
+      const legCycle = Math.sin(phase);
+      const cosCycle = Math.cos(phase);
+
+      // 다리 관절 교차 보행
+      applyBoneRotation(bones['Left_UpLeg_00'], 0, 0, legCycle * 0.48);
+      applyBoneRotation(bones['RightUpLeg_024'], 0, 0, -legCycle * 0.48);
+
+      const leftKneeZ = Math.max(0, legCycle) * 0.65 + Math.max(0, -cosCycle) * 0.20;
+      const rightKneeZ = Math.max(0, -legCycle) * 0.65 + Math.max(0, cosCycle) * 0.20;
+      applyBoneRotation(bones['Left_Leg_028'], 0, 0, leftKneeZ);
+      applyBoneRotation(bones['RightLeg_025'], 0, 0, rightKneeZ);
+
+      const leftFootZ = Math.max(0, legCycle) * 0.35 - Math.max(0, -legCycle) * 0.20;
+      const rightFootZ = Math.max(0, -legCycle) * 0.35 - Math.max(0, legCycle) * 0.20;
+      applyBoneRotation(bones['Left_Foot_029'], 0, 0, leftFootZ);
+      applyBoneRotation(bones['RightFoot_026'], 0, 0, rightFootZ);
+
+      // 팔 관절: 내려진 팔을 축으로 보폭에 맞춰 전후 역위상 스윙
+      const walkClearance = Math.abs(legCycle) * 0.04;
+      const armWalkY = -legCycle * 0.45;
+      applyBoneRotation(bones['Left_Arm_017'], 0, armWalkY, 0.82 - walkClearance);
+      applyBoneRotation(bones['RightArm_09'], 0, armWalkY, -0.82 + walkClearance);
+
+      const leftForearmWalkY = -0.15 - Math.max(0, legCycle) * 0.25;
+      const rightForearmWalkY = 0.15 + Math.max(0, -legCycle) * 0.25;
+      applyBoneRotation(bones['Left_ForeArm_018'], 0, leftForearmWalkY, 0);
+      applyBoneRotation(bones['RightForeArm_010'], 0, rightForearmWalkY, 0);
+
+      // 골반 리듬 & 척추 바운스
+      applyBoneRotation(bones['Hips_01'], legCycle * 0.06, cosCycle * 0.04, 0.04);
+      applyBoneRotation(bones['Spine_02'], -legCycle * 0.05, 0, 0.06);
+      applyBoneRotation(bones['Spine1_03'], 0, 0, 0);
+      applyBoneRotation(bones['Spine2_04'], 0, 0, 0);
+
+      // 고개 끄덕임
+      applyBoneRotation(bones['Neck_05'], 0, 0, -0.04);
+      applyBoneRotation(bones['Head_06'], 0, 0, Math.abs(cosCycle) * 0.025);
+    } else if (motionMode === 'jump') {
+      // 귀여운 공중 체공 점프 포즈
+      // 양다리 살짝 모으고 무릎 뒤로 접기
+      applyBoneRotation(bones['Left_UpLeg_00'], 0, 0, -0.22);
+      applyBoneRotation(bones['RightUpLeg_024'], 0, 0, -0.22);
+      applyBoneRotation(bones['Left_Leg_028'], 0, 0, 0.45);
+      applyBoneRotation(bones['RightLeg_025'], 0, 0, 0.45);
+      applyBoneRotation(bones['Left_Foot_029'], 0, 0, 0.25);
+      applyBoneRotation(bones['RightFoot_026'], 0, 0, 0.25);
+
+      // 양팔 활짝 들어 균형 잡기
+      applyBoneRotation(bones['Left_Arm_017'], 0, -0.15, 0.28);
+      applyBoneRotation(bones['RightArm_09'], 0, 0.15, -0.28);
+      applyBoneRotation(bones['Left_ForeArm_018'], 0, -0.28, 0);
+      applyBoneRotation(bones['RightForeArm_010'], 0, 0.28, 0);
+
+      // 가슴 펴고 시선 성당 천장으로 올려다보기
+      applyBoneRotation(bones['Hips_01'], 0, 0, -0.06);
+      applyBoneRotation(bones['Spine_02'], 0, 0, -0.08);
+      applyBoneRotation(bones['Neck_05'], 0, 0, -0.10);
+      applyBoneRotation(bones['Head_06'], 0, 0, 0.14);
     }
   });
 
   return (
     <group ref={groupRef} position={[0, 0, 0]}>
-      <primitive object={scene} />
+      <primitive object={clonedScene} />
       {showSkeleton && skeletonHelperRef.current && (
         <primitive object={skeletonHelperRef.current} />
       )}
@@ -66,7 +250,58 @@ function ChibiModel({
   );
 }
 
-// 로딩 표시 컴포넌트
+// ---------------------------------------------------------------------------
+// 카메라 프리셋 제어기
+// ---------------------------------------------------------------------------
+function CameraPresetController({
+  preset,
+  onUserOrbit,
+}: {
+  preset: CameraAnglePreset;
+  onUserOrbit: () => void;
+}) {
+  const { camera } = useThree();
+  const controlsRef = useRef<any>(null);
+
+  const targetPos = useMemo(() => {
+    switch (preset) {
+      case 'front':
+        return new THREE.Vector3(0, 0.30, 1.25);
+      case 'quarter':
+        return new THREE.Vector3(0.75, 0.36, 0.95);
+      case 'side':
+        return new THREE.Vector3(1.25, 0.30, 0);
+      case 'back':
+        return new THREE.Vector3(0, 0.35, -1.25);
+      default:
+        return null;
+    }
+  }, [preset]);
+
+  useFrame((_, delta) => {
+    if (targetPos) {
+      camera.position.lerp(targetPos, Math.min(1, delta * 6.5));
+      if (controlsRef.current) {
+        controlsRef.current.update();
+      }
+    }
+  });
+
+  return (
+    <OrbitControls
+      ref={controlsRef}
+      target={[0, 0.24, 0]}
+      minDistance={0.4}
+      maxDistance={3.5}
+      maxPolarAngle={Math.PI / 2 + 0.05}
+      enableDamping
+      dampingFactor={0.05}
+      onStart={onUserOrbit}
+    />
+  );
+}
+
+// 로딩 폴백
 function Loader() {
   return (
     <mesh position={[0, 0.24, 0]}>
@@ -76,34 +311,61 @@ function Loader() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// 메인 캐릭터 프리뷰 컴포넌트
+// ---------------------------------------------------------------------------
 export default function ChibiCharacterPreview() {
+  // 모션 모드 (대기, 걷기, 점프, 정지)
+  const [motionMode, setMotionMode] = useState<MotionMode>('idle');
+
+  // 카메라 각도 프리셋
+  const [cameraAngle, setCameraAngle] = useState<CameraAnglePreset>('quarter');
+
+  // 스타일 커스터마이징 상태
+  const [skinColor, setSkinColor] = useState('#fcdcc5'); // 따뜻한 자연 베이지
+  const [hairColor, setHairColor] = useState('#382319'); // 다크 브라운
+  const [showEyebrows, setShowEyebrows] = useState(true);
+  const [showBlush, setShowBlush] = useState(true);
+  const [showMouth, setShowMouth] = useState(true);
+
+  // 뷰어 설정
   const [wireframe, setWireframe] = useState(false);
   const [showSkeleton, setShowSkeleton] = useState(false);
-  const [autoRotate, setAutoRotate] = useState(true);
+  const [autoRotate, setAutoRotate] = useState(false);
   const [showInfo, setShowInfo] = useState(true);
   const [hasError, setHasError] = useState(false);
 
+  const customizationOptions: ChibiCustomizationOptions = useMemo(
+    () => ({
+      skinColor,
+      hairColor,
+      showEyebrows,
+      showBlush,
+      showMouth,
+    }),
+    [skinColor, hairColor, showEyebrows, showBlush, showMouth]
+  );
+
   return (
-    <div className="relative w-screen h-screen bg-[#090a0f] overflow-hidden select-none">
-      {/* Three.js R3F Canvas */}
+    <div className="relative w-screen h-screen bg-[#090a0f] overflow-hidden select-none font-sans">
+      {/* Three.js R3F 3D 캔버스 */}
       {!hasError ? (
         <Canvas
           shadows
-          camera={{ position: [0, 0.4, 1.2], fov: 45 }}
+          camera={{ position: [0.75, 0.36, 0.95], fov: 45 }}
           className="w-full h-full"
         >
-          {/* 어두운 심야 스튜디오 배경 */}
-          <color attach="background" args={['#0a0b10']} />
-          <fog attach="fog" args={['#0a0b10', 2, 8]} />
+          {/* 심야 스튜디오 조명 배경 */}
+          <color attach="background" args={['#0a0b12']} />
+          <fog attach="fog" args={['#0a0b12', 2.5, 9]} />
 
-          {/* 조명 구성 */}
-          {/* 1. 은은한 앰비언트 라이트 */}
-          <ambientLight intensity={0.4} color="#dbeafe" />
+          {/* 1. 앰비언트 라이트 */}
+          <ambientLight intensity={0.45} color="#dbeafe" />
 
-          {/* 2. 주광 (Key Light: 정면 상단 따뜻한 조명) */}
+          {/* 2. 주광 (얼굴과 몸통을 따뜻하고 화사하게 비추는 키 라이트) */}
           <directionalLight
             position={[1.5, 2.5, 1.5]}
-            intensity={1.8}
+            intensity={1.9}
             color="#fffbeb"
             castShadow
             shadow-mapSize={[1024, 1024]}
@@ -115,19 +377,19 @@ export default function ChibiCharacterPreview() {
             shadow-camera-bottom={-1}
           />
 
-          {/* 3. 보조광 (Fill Light: 측면 차가운 조명) */}
+          {/* 3. 보조광 (시원한 쿨톤 필 라이트) */}
           <directionalLight
             position={[-1.5, 1.5, -0.5]}
-            intensity={0.8}
+            intensity={0.7}
             color="#38bdf8"
           />
 
-          {/* 4. 후광 (Rim Light: 실루엣 강조) */}
+          {/* 4. 후광 림 라이트 (머리카락 엣지와 실루엣 강조) */}
           <pointLight
             position={[0, 1.5, -1.2]}
-            intensity={2.0}
+            intensity={2.2}
             color="#f59e0b"
-            distance={4}
+            distance={4.5}
           />
 
           {/* 바닥 원형 접지 그리드 */}
@@ -136,57 +398,38 @@ export default function ChibiCharacterPreview() {
             position={[0, -0.001, 0]}
           />
 
-          {/* 그림자를 받는 바닥 메쉬 */}
+          {/* 그림자 바닥 플레인 */}
           <mesh
             rotation={[-Math.PI / 2, 0, 0]}
             position={[0, -0.002, 0]}
             receiveShadow
           >
             <planeGeometry args={[6, 6]} />
-            <shadowMaterial opacity={0.4} />
+            <shadowMaterial opacity={0.45} />
           </mesh>
 
           {/* 캐릭터 모델 (Suspense 로딩) */}
           <Suspense fallback={<Loader />}>
-            <ChibiModel
+            <ChibiPreviewModel
               wireframe={wireframe}
               showSkeleton={showSkeleton}
               autoRotate={autoRotate}
+              motionMode={motionMode}
+              customization={customizationOptions}
             />
           </Suspense>
 
-          {/* 카메라 컨트롤 (타겟: 캐릭터 상체 중심 y=0.24m) */}
-          <OrbitControls
-            target={[0, 0.24, 0]}
-            minDistance={0.4}
-            maxDistance={3.5}
-            maxPolarAngle={Math.PI / 2 + 0.05} // 바닥 밑으로 지나치게 꺼지지 않도록 제한
-            enableDamping
-            dampingFactor={0.05}
+          {/* 카메라 컨트롤러 */}
+          <CameraPresetController
+            preset={cameraAngle}
+            onUserOrbit={() => setCameraAngle('custom')}
           />
         </Canvas>
       ) : (
         <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center">
-          <div className="w-12 h-12 rounded-full border border-red-500/30 bg-red-950/40 flex items-center justify-center mb-4 text-red-400">
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="8" x2="12" y2="12" />
-              <line x1="12" y1="16" x2="12.01" y2="16" />
-            </svg>
-          </div>
           <h2 className="text-lg font-light text-stone-200">
             모델을 불러오지 못했습니다
           </h2>
-          <p className="mt-2 text-xs text-stone-500 max-w-sm">
-            `public/character/chibi.glb` 파일이 존재하는지 확인해 주세요.
-          </p>
           <button
             onClick={() => setHasError(false)}
             className="mt-4 px-4 py-2 rounded-xl bg-stone-800 text-xs text-stone-300 hover:text-white"
@@ -196,12 +439,14 @@ export default function ChibiCharacterPreview() {
         </div>
       )}
 
-      {/* 상단 네비게이션 */}
-      <header className="absolute top-6 left-6 right-6 z-20 flex items-center justify-between pointer-events-none">
+      {/* ========================================================
+          상단 네비게이션 헤더
+          ======================================================== */}
+      <header className="absolute top-5 left-6 right-6 z-20 flex items-center justify-between pointer-events-none">
         <div className="flex items-center gap-3 pointer-events-auto">
           <Link
             href="/"
-            className="inline-flex items-center gap-2 rounded-full border border-stone-800 bg-stone-900/80 backdrop-blur-md px-3.5 py-1.5 text-xs text-stone-300 hover:text-white transition-all active:scale-95"
+            className="inline-flex items-center gap-2 rounded-full border border-stone-800 bg-stone-900/80 backdrop-blur-md px-3.5 py-1.5 text-xs text-stone-300 hover:text-white transition-all active:scale-95 shadow-lg"
           >
             <svg
               width="14"
@@ -215,9 +460,12 @@ export default function ChibiCharacterPreview() {
             </svg>
             <span>홈으로</span>
           </Link>
-          <span className="text-xs text-stone-500 hidden sm:inline">
-            /character-preview
-          </span>
+          <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-stone-900/60 border border-stone-800 text-[11px] text-stone-400">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+            <span className="font-medium text-stone-200">캐릭터 디자인 1단계</span>
+            <span className="text-stone-500">|</span>
+            <span>기본 외형 & 얼굴 리디자인</span>
+          </div>
         </div>
 
         <div className="pointer-events-auto flex items-center gap-2">
@@ -225,107 +473,333 @@ export default function ChibiCharacterPreview() {
             onClick={() => setShowInfo(!showInfo)}
             className={`px-3 py-1.5 rounded-full text-xs border transition-all ${
               showInfo
-                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-lg shadow-amber-500/10'
                 : 'bg-stone-900/70 text-stone-400 border-stone-800 hover:text-stone-200'
             }`}
           >
-            {showInfo ? '스펙 패널 숨기기' : '모델 스펙 보기'}
+            {showInfo ? '스펙 리포트 닫기' : '리디자인 스펙 보기'}
           </button>
         </div>
       </header>
 
-      {/* 우측 상단 모델 스펙 패널 */}
+      {/* ========================================================
+          좌측 조작 패널: 모션 모드 & 카메라 앵글 & 커스터마이징
+          ======================================================== */}
+      <aside className="absolute top-20 left-6 z-20 w-64 max-h-[calc(100vh-140px)] overflow-y-auto space-y-3 pointer-events-auto text-xs font-light">
+        {/* 1. 동작 모션 선택 */}
+        <div className="rounded-2xl border border-stone-800/80 bg-stone-950/85 backdrop-blur-xl p-4 shadow-xl">
+          <span className="text-[11px] font-medium text-amber-400 block mb-2.5">
+            🎬 실시간 모션 테스트
+          </span>
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              onClick={() => setMotionMode('idle')}
+              className={`px-2.5 py-1.5 rounded-xl text-center text-xs transition-all ${
+                motionMode === 'idle'
+                  ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40 font-medium'
+                  : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
+              }`}
+            >
+              대기 (Idle)
+            </button>
+            <button
+              onClick={() => setMotionMode('walk')}
+              className={`px-2.5 py-1.5 rounded-xl text-center text-xs transition-all ${
+                motionMode === 'walk'
+                  ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40 font-medium'
+                  : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
+              }`}
+            >
+              걷기 (Walk)
+            </button>
+            <button
+              onClick={() => setMotionMode('jump')}
+              className={`px-2.5 py-1.5 rounded-xl text-center text-xs transition-all ${
+                motionMode === 'jump'
+                  ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40 font-medium'
+                  : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
+              }`}
+            >
+              점프 (Jump)
+            </button>
+            <button
+              onClick={() => setMotionMode('static')}
+              className={`px-2.5 py-1.5 rounded-xl text-center text-xs transition-all ${
+                motionMode === 'static'
+                  ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40 font-medium'
+                  : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
+              }`}
+            >
+              정지 (A-Pose)
+            </button>
+          </div>
+          <p className="mt-2 text-[10px] text-stone-500">
+            ※ 관절 회전 중에도 눈 깜빡임과 표정이 100% 동기화됩니다.
+          </p>
+        </div>
+
+        {/* 2. 카메라 시점 프리셋 */}
+        <div className="rounded-2xl border border-stone-800/80 bg-stone-950/85 backdrop-blur-xl p-4 shadow-xl">
+          <span className="text-[11px] font-medium text-sky-400 block mb-2.5">
+            📐 시점 각도 프리셋
+          </span>
+          <div className="grid grid-cols-4 gap-1 text-[11px]">
+            <button
+              onClick={() => setCameraAngle('front')}
+              className={`py-1.5 rounded-lg text-center transition-all ${
+                cameraAngle === 'front'
+                  ? 'bg-sky-500/25 text-sky-300 border border-sky-500/40'
+                  : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
+              }`}
+            >
+              정면
+            </button>
+            <button
+              onClick={() => setCameraAngle('quarter')}
+              className={`py-1.5 rounded-lg text-center transition-all ${
+                cameraAngle === 'quarter'
+                  ? 'bg-sky-500/25 text-sky-300 border border-sky-500/40'
+                  : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
+              }`}
+            >
+              45°
+            </button>
+            <button
+              onClick={() => setCameraAngle('side')}
+              className={`py-1.5 rounded-lg text-center transition-all ${
+                cameraAngle === 'side'
+                  ? 'bg-sky-500/25 text-sky-300 border border-sky-500/40'
+                  : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
+              }`}
+            >
+              측면
+            </button>
+            <button
+              onClick={() => setCameraAngle('back')}
+              className={`py-1.5 rounded-lg text-center transition-all ${
+                cameraAngle === 'back'
+                  ? 'bg-sky-500/25 text-sky-300 border border-sky-500/40'
+                  : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
+              }`}
+            >
+              후면
+            </button>
+          </div>
+          <p className="mt-2 text-[10px] text-stone-500">
+            후면 시점에서 정수리 돔과 목덜미 헤어 볼륨을 확인할 수 있습니다.
+          </p>
+        </div>
+
+        {/* 3. 스타일 커스터마이징 */}
+        <div className="rounded-2xl border border-stone-800/80 bg-stone-950/85 backdrop-blur-xl p-4 shadow-xl space-y-3">
+          <span className="text-[11px] font-medium text-emerald-400 block">
+            🎨 외형 팔레트 (1단계)
+          </span>
+
+          {/* 피부 톤 선택 */}
+          <div>
+            <span className="text-[10px] text-stone-400 block mb-1.5">피부 톤</span>
+            <div className="flex items-center gap-2">
+              {[
+                { name: '따뜻한 베이지', color: '#fcdcc5' },
+                { name: '복숭아 아이보리', color: '#ffebd9' },
+                { name: '내추럴 샌드', color: '#edd0b6' },
+              ].map((skin) => (
+                <button
+                  key={skin.color}
+                  onClick={() => setSkinColor(skin.color)}
+                  title={skin.name}
+                  className={`w-7 h-7 rounded-full transition-transform border ${
+                    skinColor === skin.color
+                      ? 'scale-110 border-white ring-2 ring-emerald-400/50'
+                      : 'border-stone-700 hover:scale-105'
+                  }`}
+                  style={{ backgroundColor: skin.color }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* 헤어 컬러 선택 */}
+          <div>
+            <span className="text-[10px] text-stone-400 block mb-1.5">헤어 컬러</span>
+            <div className="flex items-center gap-2">
+              {[
+                { name: '다크 브라운', color: '#382319' },
+                { name: '밀크 초코', color: '#543220' },
+                { name: '미드나잇 블랙', color: '#1c1622' },
+                { name: '골든 허니', color: '#8f5832' },
+              ].map((hair) => (
+                <button
+                  key={hair.color}
+                  onClick={() => setHairColor(hair.color)}
+                  title={hair.name}
+                  className={`w-7 h-7 rounded-full transition-transform border ${
+                    hairColor === hair.color
+                      ? 'scale-110 border-white ring-2 ring-emerald-400/50'
+                      : 'border-stone-700 hover:scale-105'
+                  }`}
+                  style={{ backgroundColor: hair.color }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* 표정 요소 온/오프 토글 */}
+          <div className="pt-2 border-t border-stone-800/60 space-y-1.5 text-[11px]">
+            <label className="flex items-center justify-between text-stone-400 cursor-pointer">
+              <span>눈썹 (Eyebrows)</span>
+              <input
+                type="checkbox"
+                checked={showEyebrows}
+                onChange={(e) => setShowEyebrows(e.target.checked)}
+                className="rounded accent-emerald-500 cursor-pointer"
+              />
+            </label>
+            <label className="flex items-center justify-between text-stone-400 cursor-pointer">
+              <span>볼터치 홍조 (Blush)</span>
+              <input
+                type="checkbox"
+                checked={showBlush}
+                onChange={(e) => setShowBlush(e.target.checked)}
+                className="rounded accent-emerald-500 cursor-pointer"
+              />
+            </label>
+            <label className="flex items-center justify-between text-stone-400 cursor-pointer">
+              <span>미소 입 (Mouth)</span>
+              <input
+                type="checkbox"
+                checked={showMouth}
+                onChange={(e) => setShowMouth(e.target.checked)}
+                className="rounded accent-emerald-500 cursor-pointer"
+              />
+            </label>
+          </div>
+        </div>
+      </aside>
+
+      {/* ========================================================
+          우측 모델 스펙 & 1단계 리디자인 보고서 패널
+          ======================================================== */}
       {showInfo && (
-        <aside className="absolute top-20 right-6 z-20 w-80 max-h-[calc(100vh-140px)] overflow-y-auto rounded-2xl border border-stone-800/80 bg-stone-950/85 backdrop-blur-xl p-5 text-xs shadow-2xl animate-fade-in pointer-events-auto">
+        <aside className="absolute top-20 right-6 z-20 w-84 max-h-[calc(100vh-140px)] overflow-y-auto rounded-2xl border border-stone-800/80 bg-stone-950/85 backdrop-blur-xl p-5 text-xs shadow-2xl pointer-events-auto">
           <div className="flex items-center justify-between pb-3 border-b border-stone-800">
             <h3 className="font-medium text-stone-200 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>치비 캐릭터 모델 분석</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              <span>1단계 외형 리디자인 리포트</span>
             </h3>
-            <span className="text-[10px] text-stone-500 font-mono">chibi.glb</span>
+            <span className="text-[10px] text-emerald-400 font-mono">Stage 1 Active</span>
           </div>
 
           <div className="mt-4 space-y-3 font-light text-stone-400">
-            {/* 기본 제원 */}
+            {/* 1. 피부 톤 개선 */}
             <div className="rounded-xl bg-stone-900/60 p-3 border border-stone-800/60">
               <span className="text-[11px] text-amber-400 font-medium block mb-1.5">
-                📏 크기 및 바운딩 박스
-              </span>
-              <div className="grid grid-cols-3 gap-2 text-[11px] text-stone-300">
-                <div>
-                  <span className="text-stone-500 block">가로(X)</span>
-                  <span className="font-mono text-emerald-400">0.42 m</span>
-                </div>
-                <div>
-                  <span className="text-stone-500 block">높이(Y)</span>
-                  <span className="font-mono text-emerald-400">0.47 m</span>
-                </div>
-                <div>
-                  <span className="text-stone-500 block">깊이(Z)</span>
-                  <span className="font-mono text-emerald-400">0.27 m</span>
-                </div>
-              </div>
-              <p className="mt-2 text-[10px] text-stone-500 leading-relaxed">
-                ※ 치비 특유의 2.5등신 비율로, 발바닥 접지면(Y=0)이 정확히 정렬되어 있습니다.
-              </p>
-            </div>
-
-            {/* 리깅 및 스켈레톤 */}
-            <div className="rounded-xl bg-stone-900/60 p-3 border border-stone-800/60">
-              <span className="text-[11px] text-sky-400 font-medium block mb-1.5">
-                🦴 리깅 (Skeleton & Bones)
+                ✨ 피부 톤 (Skin Tone)
               </span>
               <div className="flex items-center justify-between text-stone-300 mb-1">
-                <span>리깅 여부</span>
-                <span className="text-emerald-400 font-medium">✅ 완료 (Rigged)</span>
-              </div>
-              <div className="flex items-center justify-between text-stone-300 mb-1">
-                <span>SkinnedMesh</span>
-                <span className="font-mono">2개</span>
+                <span>기존 단색</span>
+                <span className="text-red-400 line-through">보라/핑크 (#ffa9fb)</span>
               </div>
               <div className="flex items-center justify-between text-stone-300">
-                <span>본(Bone / Joints)</span>
-                <span className="font-mono text-sky-300">32개 (휴머노이드 골격)</span>
+                <span>리디자인</span>
+                <span className="text-emerald-400 font-medium">따뜻한 자연 베이지 (#fcdcc5)</span>
               </div>
               <p className="mt-2 text-[10px] text-stone-500 leading-relaxed">
-                골반(Hips), 척추(Spine), 목, 머리, 어깨, 팔, 손, 손가락, 다리, 발, 발가락 본까지 표준 풀 리깅되어 있습니다.
+                PBR Standard 머티리얼(거칠기 0.70)을 적용하여 성당의 따뜻한 촛불 및 스테인드글라스 조명과 포근하게 어우러집니다.
               </p>
             </div>
 
-            {/* 애니메이션 상태 */}
+            {/* 2. 눈 & 깜빡임 시스템 */}
             <div className="rounded-xl bg-stone-900/60 p-3 border border-stone-800/60">
-              <span className="text-[11px] text-purple-400 font-medium block mb-1.5">
-                🎬 내장 애니메이션
+              <span className="text-[11px] text-sky-400 font-medium block mb-1.5">
+                👀 치비 눈 & 눈 깜빡임 (Eyes & Blink)
+              </span>
+              <ul className="space-y-1 text-stone-300 text-[11px]">
+                <li className="flex justify-between">
+                  <span>안구 메시 교체</span>
+                  <span className="text-sky-300">신규 입체 눈 시스템</span>
+                </li>
+                <li className="flex justify-between">
+                  <span>동공 베이스</span>
+                  <span className="text-stone-300">깊은 에스프레소 브라운</span>
+                </li>
+                <li className="flex justify-between">
+                  <span>하이라이트</span>
+                  <span className="text-amber-300">선명한 듀얼 스페큘러</span>
+                </li>
+                <li className="flex justify-between">
+                  <span>깜빡임 주기</span>
+                  <span className="text-emerald-400">3.5초 ~ 6.0초 (140ms 소요)</span>
+                </li>
+              </ul>
+              <p className="mt-2 text-[10px] text-stone-500 leading-relaxed">
+                눈 감김 시 귀여운 호선 텍스처로 자동 전환되며 자연스러운 감정 표현을 전달합니다.
+              </p>
+            </div>
+
+            {/* 3. 얼굴 디테일 */}
+            <div className="rounded-xl bg-stone-900/60 p-3 border border-stone-800/60">
+              <span className="text-[11px] text-pink-400 font-medium block mb-1.5">
+                🌸 표정 파츠 (Facial Features)
+              </span>
+              <ul className="space-y-1 text-[11px] text-stone-300">
+                <li>• <strong>눈썹</strong>: 차분한 다크 브라운 아치형 눈썹</li>
+                <li>• <strong>볼터치</strong>: 사랑스러운 코랄 핑크 방사형 그라데이션 (#fb7185)</li>
+                <li>• <strong>입</strong>: 작고 부드러운 미소 라인 (#6f2d2d)</li>
+              </ul>
+            </div>
+
+            {/* 4. 3D 볼륨 헤어 */}
+            <div className="rounded-xl bg-stone-900/60 p-3 border border-stone-800/60">
+              <span className="text-[11px] text-amber-300 font-medium block mb-1.5">
+                💇 3D 볼륨 헤어 (Hair Styling)
+              </span>
+              <p className="text-[11px] text-stone-300 mb-2">
+                기존 민자 대머리 형태를 벗어나 성당 분위기에 어울리는 단정한 치비 숏/단발 헤어 구현:
+              </p>
+              <ul className="space-y-1 text-[10px] text-stone-400">
+                <li>• 정수리 돔 (Crown): 둥글고 풍성한 두상 실루엣</li>
+                <li>• 3단 앞머리: 중앙 + 좌우 캡슐 클러스터 입체 배치</li>
+                <li>• 옆머리 (Side): 볼을 감싸는 자연스러운 페이스 라인</li>
+                <li>• 후두부/목덜미: 뒤통수 쉘 + 목덜미 볼륨 캡슐</li>
+              </ul>
+            </div>
+
+            {/* 5. 골격 및 본 동기화 */}
+            <div className="rounded-xl bg-stone-900/60 p-3 border border-stone-800/60">
+              <span className="text-[11px] text-emerald-400 font-medium block mb-1.5">
+                🦴 Skeleton 동기화 & 독립성
               </span>
               <div className="flex items-center justify-between text-stone-300 mb-1">
-                <span>클립 개수</span>
-                <span className="font-mono text-stone-400">0개 (클립 없음)</span>
+                <span>보존 본(Bone) 개수</span>
+                <span className="font-mono text-emerald-400">32개 100% 보존</span>
               </div>
-              <p className="mt-1 text-[10px] text-stone-400 leading-relaxed">
-                현재 모델은 **베이스 리깅 모델(Base Rigged Mesh)**로 애니메이션 클립이 내장되어 있지 않습니다.
+              <div className="flex items-center justify-between text-stone-300 mb-1">
+                <span>머리 파츠 결합 본</span>
+                <span className="font-mono text-sky-300">Head_06 (역행렬 래퍼)</span>
+              </div>
+              <p className="mt-1 text-[10px] text-stone-500 leading-relaxed">
+                SkeletonUtils.clone으로 다중 접속 플레이어별 독립 스켈레톤 인스턴스를 유지하며 충돌과 애니메이션 물리 시스템과 완벽 호환됩니다.
               </p>
-              <div className="mt-2 p-2 rounded-lg bg-purple-950/30 border border-purple-500/20 text-[10px] text-purple-300 leading-relaxed">
-                💡 <strong>향후 이동/기도 연동 팁</strong>:
-                골격(32개 본)이 이미 완성되어 있으므로, 코드로 본 회전을 직접 제어(절차적 걷기/기도 애니메이션)하거나 Mixamo FBX 애니메이션을 리타겟팅하여 연결할 수 있습니다.
-              </div>
             </div>
 
-            {/* 메시 및 머티리얼 */}
-            <div className="rounded-xl bg-stone-900/60 p-3 border border-stone-800/60 text-[11px]">
-              <span className="text-stone-300 font-medium block mb-1">
-                메시 & 머티리얼
+            {/* 6. 2단계 의상 모듈화 아키텍처 준비 */}
+            <div className="rounded-xl bg-stone-900/60 p-3 border border-stone-800/60">
+              <span className="text-[11px] text-purple-400 font-medium block mb-1.5">
+                👕 2단계 의상 모듈 인터페이스 준비
               </span>
-              <ul className="space-y-1 text-stone-400 text-[10px]">
-                <li>• 바디 메시: <code className="text-stone-300">SM_Chibi_Body</code> (핑크 PBR)</li>
-                <li>• 안구 메시: <code className="text-stone-300">SM_Chibi_Eye</code> (블랙 PBR)</li>
-                <li>• 외부 텍스처 파일: 없음 (단색 PBR 파라미터 적용)</li>
-              </ul>
+              <p className="text-[10px] text-stone-400 leading-relaxed">
+                `ChibiCustomizationOptions`에 상의(Top), 하의(Bottom), 신발(Shoes), 성물 액세서리(Accessories) 슬롯이 인터페이스로 기획되어 있어 차기 단계에서 매끄럽게 확장할 수 있습니다.
+              </p>
             </div>
           </div>
         </aside>
       )}
 
-      {/* 하단 뷰 컨트롤 바 */}
+      {/* ========================================================
+          하단 뷰 컨트롤 바
+          ======================================================== */}
       <footer className="absolute bottom-6 inset-x-6 z-20 flex justify-center pointer-events-none">
         <div className="pointer-events-auto flex items-center gap-2 rounded-2xl border border-stone-800/90 bg-stone-950/80 backdrop-blur-xl px-4 py-2.5 shadow-2xl">
           {/* 자동 회전 토글 */}
@@ -352,7 +826,7 @@ export default function ChibiCharacterPreview() {
             }`}
           >
             <span>🦴</span>
-            <span>{showSkeleton ? '스켈레톤 끄기' : '스켈레톤(본) 보기'}</span>
+            <span>{showSkeleton ? '스켈레톤 숨기기' : '32본 스켈레톤 보기'}</span>
           </button>
 
           <div className="w-px h-4 bg-stone-800" />
@@ -373,13 +847,12 @@ export default function ChibiCharacterPreview() {
 
       {/* 좌측 하단 조작 가이드 */}
       <div className="absolute bottom-6 left-6 z-10 hidden md:block pointer-events-none text-[11px] text-stone-500 font-light bg-stone-950/50 backdrop-blur-sm p-3 rounded-xl border border-stone-900">
-        <p>• 마우스 좌클릭 드래그: 360도 카메라 궤도 회전</p>
-        <p>• 마우스 휠 스크롤: 줌 인 / 줌 아웃</p>
+        <p>• 마우스 좌클릭 드래그: 360도 자유 회전</p>
+        <p>• 마우스 휠 스크롤: 확대 / 축소</p>
         <p>• 마우스 우클릭 드래그: 시점 이동 (Pan)</p>
       </div>
     </div>
   );
 }
 
-// Next.js 사전 프리로드 최적화
 useGLTF.preload('/character/chibi.glb');
