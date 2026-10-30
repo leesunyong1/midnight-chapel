@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import Link from 'next/link';
 import ChibiPlayer, { PlayerDebugInfo } from '@/components/character/ChibiPlayer';
 import VirtualJoystick from '@/components/ui/VirtualJoystick';
+import JumpButton from '@/components/ui/JumpButton';
 import ThirdPersonCamera from './ThirdPersonCamera';
 import CommunityCathedralScene, {
   COMMUNITY_CATHEDRAL_BOUNDS,
@@ -20,6 +21,8 @@ import {
 export default function CommunityPrayer3DCanvas() {
   // 모바일 조이스틱 입력 Ref
   const inputRef = useRef({ x: 0, z: 0 });
+  // 모바일 점프 입력 Ref
+  const jumpRef = useRef(false);
 
   // 카메라 수평 회전 각도 Ref
   const cameraYawRef = useRef(0);
@@ -138,11 +141,12 @@ export default function CommunityPrayer3DCanvas() {
           selectedSpawnId={currentSpawn.id}
         />
 
-        {/* 3D 치비 플레이어 캐릭터 (스폰 시스템 연동 + 슬라이딩 충돌) */}
+        {/* 3D 치비 플레이어 캐릭터 (스폰 시스템 연동 + 슬라이딩 충돌 + 점프) */}
         <Suspense fallback={null}>
           <ChibiPlayer
             key={`player-spawn-${currentSpawn.id}`}
             inputRef={inputRef}
+            jumpRef={jumpRef}
             cameraYawRef={cameraYawRef}
             onPositionChange={handlePlayerPosChange}
             onDebugUpdate={handleDebugUpdate}
@@ -260,7 +264,12 @@ export default function CommunityPrayer3DCanvas() {
       {/* ========================================================
           하단 조작 가이드 & 공동실 제원 안내 (우측 하단)
           ======================================================== */}
-      <footer className="absolute bottom-6 right-6 z-20 flex flex-col items-end gap-2 pointer-events-none">
+      <footer className="absolute bottom-6 right-6 z-20 flex flex-col items-end gap-2.5 pointer-events-none">
+        {/* 모바일 터치 점프 버튼 */}
+        <div className="pointer-events-auto">
+          <JumpButton onJump={() => { jumpRef.current = true; }} />
+        </div>
+
         <div className="rounded-2xl border border-stone-800/80 bg-stone-950/80 backdrop-blur-md px-4 py-3 text-xs text-stone-400 shadow-xl space-y-1.5 max-w-sm">
           <div className="flex items-center justify-between pb-1 border-b border-stone-800/60">
             <span className="text-[11px] font-medium text-sky-400">
@@ -285,7 +294,11 @@ export default function CommunityPrayer3DCanvas() {
                 D
               </kbd>
             </span>
-            <span className="text-[11px] text-stone-300">/ 방향키 : 자유 이동</span>
+            <span className="text-[11px] text-stone-300">/ 방향키 : 이동 · </span>
+            <kbd className="px-1.5 py-0.5 rounded bg-stone-800 text-[10px] text-sky-300 font-mono">
+              Space
+            </kbd>
+            <span className="text-[11px] text-stone-300">: 점프</span>
           </p>
           <p className="text-[10px] text-stone-400 font-light">
             • <strong className="text-stone-300">5.6m 중앙 통로</strong>와 양측 측랑을 자유롭게 이동

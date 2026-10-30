@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import Link from 'next/link';
 import ChibiPlayer from '@/components/character/ChibiPlayer';
 import VirtualJoystick from '@/components/ui/VirtualJoystick';
+import JumpButton from '@/components/ui/JumpButton';
 import ThirdPersonCamera from './ThirdPersonCamera';
 import PrivateChapelScene, {
   PRIVATE_CHAPEL_BOUNDS,
@@ -30,6 +31,8 @@ const PRIVATE_INITIAL_POS: [number, number, number] = [0, 0, 4.0];
 export default function PrivatePrayer3DCanvas() {
   // 모바일 조이스틱 입력 Ref
   const inputRef = useRef({ x: 0, z: 0 });
+  // 모바일 점프 입력 Ref
+  const jumpRef = useRef(false);
 
   // 카메라 수평 회전 각도 Ref (플레이어 이동 벡터와 동기화)
   const cameraYawRef = useRef(0);
@@ -67,11 +70,11 @@ export default function PrivatePrayer3DCanvas() {
     }
   }, []);
 
-  // [E] 키 또는 [Space] 키로 제단 앞 상호작용
+  // [E] 키로 제단 앞 상호작용 (스페이스바는 점프로 분리)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
-        (e.key.toLowerCase() === 'e' || e.key === ' ') &&
+        e.key.toLowerCase() === 'e' &&
         nearAltar &&
         !isNoteModalOpen &&
         !isHistoryDrawerOpen
@@ -168,10 +171,11 @@ export default function PrivatePrayer3DCanvas() {
         {/* 3D 개인 성당 내부 건축물 (12m × 16m × 7.5m, 촛불 상태 반영) */}
         <PrivateChapelScene isCandleLit={isLit} />
 
-        {/* 3D 치비 플레이어 캐릭터 (슬라이딩 충돌 + 경계 제한) */}
+        {/* 3D 치비 플레이어 캐릭터 (슬라이딩 충돌 + 경계 제한 + 점프) */}
         <Suspense fallback={null}>
           <ChibiPlayer
             inputRef={inputRef}
+            jumpRef={jumpRef}
             cameraYawRef={cameraYawRef}
             onPositionChange={handlePlayerPosChange}
             bounds={PRIVATE_CHAPEL_BOUNDS}
@@ -298,19 +302,24 @@ export default function PrivatePrayer3DCanvas() {
       </div>
 
       {/* ========================================================
-          하단 조작 가이드 & 액션 (우측 하단)
+          하단 조작 가이드 & 모바일 액션 (우측 하단)
           ======================================================== */}
-      <footer className="absolute bottom-6 right-6 z-20 flex flex-col items-end gap-2 pointer-events-none">
-        {/* 모바일 환경 전용: 기도대 앞 즉시 기도 버튼 */}
-        {nearAltar && (
-          <button
-            type="button"
-            onClick={() => setIsNoteModalOpen(true)}
-            className="pointer-events-auto md:hidden px-4 py-2.5 rounded-2xl bg-amber-600/90 hover:bg-amber-500 text-stone-50 text-xs font-medium shadow-2xl border border-amber-400/40 flex items-center gap-1.5 active:scale-95"
-          >
-            <span>🙏 기도문 작성하기</span>
-          </button>
-        )}
+      <footer className="absolute bottom-6 right-6 z-20 flex flex-col items-end gap-2.5 pointer-events-none">
+        {/* 모바일 환경 전용 액션 버튼: 기도대 앞 즉시 기도 및 점프 버튼 */}
+        <div className="flex items-center gap-2 pointer-events-auto">
+          {nearAltar && (
+            <button
+              type="button"
+              onClick={() => setIsNoteModalOpen(true)}
+              className="px-4 py-2.5 rounded-2xl bg-amber-600/90 hover:bg-amber-500 text-stone-50 text-xs font-medium shadow-2xl border border-amber-400/40 flex items-center gap-1.5 active:scale-95 transition-all"
+            >
+              <span>🙏 기도문 작성하기</span>
+            </button>
+          )}
+
+          {/* 모바일 터치 점프 버튼 */}
+          <JumpButton onJump={() => { jumpRef.current = true; }} />
+        </div>
 
         <div className="rounded-2xl border border-stone-800/80 bg-stone-950/75 backdrop-blur-md px-4 py-2.5 text-xs text-stone-400 shadow-xl space-y-1.5">
           <p className="flex items-center gap-1.5 flex-wrap">
@@ -328,13 +337,17 @@ export default function PrivatePrayer3DCanvas() {
                 D
               </kbd>
             </span>
-            <span className="text-[11px] text-stone-300">/ 방향키 : 단독실 거닐기</span>
+            <span className="text-[11px] text-stone-300">/ 방향키 : 이동 · </span>
+            <kbd className="px-1.5 py-0.5 rounded bg-stone-800 text-[10px] text-amber-300 font-mono">
+              Space
+            </kbd>
+            <span className="text-[11px] text-stone-300">: 점프</span>
           </p>
           <p className="text-[10px] text-stone-400 font-light flex items-center gap-1.5">
             <span className="text-amber-400/90 font-medium">마우스 드래그</span> 360° 회전 · <span className="text-amber-400/90 font-medium">휠 스크롤</span> 줌인/아웃
           </p>
           <p className="text-[10px] text-stone-500 font-light">
-            기도대 앞: <kbd className="text-amber-400 font-mono">E</kbd> / 스페이스로 기도 봉헌
+            기도대 앞: <kbd className="text-amber-400 font-mono">E</kbd> 키로 기도문 봉헌
           </p>
         </div>
       </footer>
