@@ -87,21 +87,28 @@ type BoneMap = Record<string, BoneEntry>;
 // 매 프레임 GC(가비지 컬렉션) 오버헤드를 방지하기 위한 재사용 수학 객체
 const scratchEuler = new THREE.Euler(0, 0, 0, 'XYZ');
 const scratchQuat = new THREE.Quaternion();
+const scratchTargetQuat = new THREE.Quaternion();
 
 /**
  * 본(Bone)의 초기 Rest Pose 쿼터니언을 기준으로 상대 델타 회전을 곱해 적용합니다.
- * 누적 오차가 발생하지 않으며 항상 Rest Pose 기준으로 안전하게 회전합니다.
+ * slerpAlpha를 통해 프레임 간 튐 없는 부드러운 구면 선형 보간(Slerp)을 지원합니다.
  */
 function applyBoneRotation(
   entry: BoneEntry | undefined,
   x: number,
   y: number,
-  z: number
+  z: number,
+  slerpAlpha = 1.0
 ) {
   if (!entry) return;
   scratchEuler.set(x, y, z, 'XYZ');
   scratchQuat.setFromEuler(scratchEuler);
-  entry.bone.quaternion.copy(entry.restQuat).multiply(scratchQuat);
+  scratchTargetQuat.copy(entry.restQuat).multiply(scratchQuat);
+  if (slerpAlpha >= 1.0) {
+    entry.bone.quaternion.copy(scratchTargetQuat);
+  } else {
+    entry.bone.quaternion.slerp(scratchTargetQuat, slerpAlpha);
+  }
 }
 
 function smoothstep(min: number, max: number, val: number): number {
@@ -893,18 +900,23 @@ export default function ChibiPlayer({
     // 9. 관절 애니메이션 계산 (Action Pose or Walk/Idle)
     // ========================================================
     const activeAction = actionStateRef.current;
+    const isKneelerTarget = targetSeatRef.current?.type === 'kneeler';
     const pose = computeActionPose(
       activeAction,
       actionTimerRef.current,
       idlePhase,
       breath,
-      sway
+      sway,
+      isKneelerTarget
     );
 
     // 얼굴 표정 & 기도 중 눈 감김 실시간 반영
     if (faceControllerRef.current) {
       faceControllerRef.current.update(dt, pose.isPraying);
     }
+
+    // 60fps 부드러운 쿼터니언 Slerp 보간 속도 계수 (프레임 튐 완전 제거)
+    const boneSlerp = Math.min(dt * 22.0, 1.0);
 
     if (activeAction === 'idle' || activeAction === 'walk') {
       // 기본 보행 및 대기 포즈 계산
@@ -917,8 +929,8 @@ export default function ChibiPlayer({
       const groundThighZ_R = -legCycle * 0.48 * w;
       const leftThighZ = groundThighZ_L * (1 - jw) + -0.22 * jw;
       const rightThighZ = groundThighZ_R * (1 - jw) + -0.22 * jw;
-      applyBoneRotation(bones['Left_UpLeg_00'], 0, 0, leftThighZ);
-      applyBoneRotation(bones['RightUpLeg_024'], 0, 0, rightThighZ);
+      applyBoneRotation(bones['Left_UpLeg_00'], 0, 0, leftThighZ, boneSlerp);
+      applyBoneRotation(bones['RightUpLeg_024'], 0, 0, rightThighZ, boneSlerp);
 
       const groundKneeZ_L =
         (Math.max(0, legCycle) * 0.65 + Math.max(0, -cosCycle) * 0.2) * w;
@@ -926,8 +938,8 @@ export default function ChibiPlayer({
         (Math.max(0, -legCycle) * 0.65 + Math.max(0, cosCycle) * 0.2) * w;
       const leftKneeZ = groundKneeZ_L * (1 - jw) + 0.45 * jw + squash * 0.35;
       const rightKneeZ = groundKneeZ_R * (1 - jw) + 0.45 * jw + squash * 0.35;
-      applyBoneRotation(bones['Left_Leg_028'], 0, 0, leftKneeZ);
-      applyBoneRotation(bones['RightLeg_025'], 0, 0, rightKneeZ);
+      applyBoneRotation(bones['Left_Leg_028'], 0, 0, leftKneeZ, boneSlerp);
+      applyBoneRotation(bones['RightLeg_025'], 0, 0, rightKneeZ, boneSlerp);
 
       const groundFootZ_L =
         (Math.max(0, legCycle) * 0.35 - Math.max(0, -legCycle) * 0.2) * w;
@@ -935,8 +947,14 @@ export default function ChibiPlayer({
         (Math.max(0, -legCycle) * 0.35 - Math.max(0, legCycle) * 0.2) * w;
       const leftFootZ = groundFootZ_L * (1 - jw) + 0.25 * jw;
       const rightFootZ = groundFootZ_R * (1 - jw) + 0.25 * jw;
-      applyBoneRotation(bones['Left_Foot_029'], 0, 0, leftFootZ);
-      applyBoneRotation(bones['RightFoot_026'], 0, 0, rightFootZ);
+      applyBoneRotation(bones['Left_Foot_029'], 0, 0, leftFootZ, boneSlerp);
+      applyBoneRotation(bones['RightFoot_026'], 0, 0, rightFootZ, boneSlerp);
+
+      // 어깨/쇄골 및 손목을 기본 자세로 부드럽게 복귀
+      applyBoneRotation(bones['Left_Shoulder_016'], 0, 0, 0, boneSlerp);
+      applyBoneRotation(bones['RightShoulder_08'], 0, 0, 0, boneSlerp);
+      applyBoneRotation(bones['Left_Hand_019'], 0, 0, 0, boneSlerp);
+      applyBoneRotation(bones['RightHand_011'], 0, 0, 0, boneSlerp);
 
       // 팔 관절
       const leftArmIdleZ = 0.82 + sway * 0.015;
@@ -963,8 +981,8 @@ export default function ChibiPlayer({
       const rightArmZ = groundArmZ_R * (1 - jw) + rightArmJumpZ * jw;
       const leftArmY = groundArmY_L * (1 - jw) + leftArmJumpY * jw;
       const rightArmY = groundArmY_R * (1 - jw) + rightArmJumpY * jw;
-      applyBoneRotation(bones['Left_Arm_017'], 0, leftArmY, leftArmZ);
-      applyBoneRotation(bones['RightArm_09'], 0, rightArmY, rightArmZ);
+      applyBoneRotation(bones['Left_Arm_017'], 0, leftArmY, leftArmZ, boneSlerp);
+      applyBoneRotation(bones['RightArm_09'], 0, rightArmY, rightArmZ, boneSlerp);
 
       const leftForearmWalkY = -0.15 - Math.max(0, legCycle) * 0.25;
       const rightForearmWalkY = 0.15 + Math.max(0, -legCycle) * 0.25;
@@ -975,8 +993,8 @@ export default function ChibiPlayer({
 
       const leftForearmY = groundForearmY_L * (1 - jw) + -0.28 * jw;
       const rightForearmY = groundForearmY_R * (1 - jw) + 0.28 * jw;
-      applyBoneRotation(bones['Left_ForeArm_018'], 0, leftForearmY, 0);
-      applyBoneRotation(bones['RightForeArm_010'], 0, rightForearmY, 0);
+      applyBoneRotation(bones['Left_ForeArm_018'], 0, leftForearmY, 0, boneSlerp);
+      applyBoneRotation(bones['RightForeArm_010'], 0, rightForearmY, 0, boneSlerp);
 
       // 골반, 척추, 머리
       const hipsWalkX = legCycle * 0.06;
@@ -992,7 +1010,7 @@ export default function ChibiPlayer({
       const hipsX = groundHipsX * (1 - jw);
       const hipsY = groundHipsY * (1 - jw);
       const hipsZ = groundHipsZ * (1 - jw) + -0.06 * jw + squash * 0.08;
-      applyBoneRotation(bones['Hips_01'], hipsX, hipsY, hipsZ);
+      applyBoneRotation(bones['Hips_01'], hipsX, hipsY, hipsZ, boneSlerp);
 
       const jumpSpineZ = velocityYRef.current > 0 ? -0.08 : 0.06;
       const spineWalkX = -legCycle * 0.05;
@@ -1007,9 +1025,9 @@ export default function ChibiPlayer({
       const spineX = groundSpineX * (1 - jw);
       const spineY = groundSpineY * (1 - jw);
       const spineZ = groundSpineZ * (1 - jw) + jumpSpineZ * jw + squash * 0.12;
-      applyBoneRotation(bones['Spine_02'], spineX, spineY, spineZ);
-      applyBoneRotation(bones['Spine1_03'], 0, 0, breath * 0.008 * idleW * (1 - jw));
-      applyBoneRotation(bones['Spine2_04'], 0, 0, breath * 0.008 * idleW * (1 - jw));
+      applyBoneRotation(bones['Spine_02'], spineX, spineY, spineZ, boneSlerp);
+      applyBoneRotation(bones['Spine1_03'], 0, 0, breath * 0.008 * idleW * (1 - jw), boneSlerp);
+      applyBoneRotation(bones['Spine2_04'], 0, 0, breath * 0.008 * idleW * (1 - jw), boneSlerp);
 
       const jumpHeadZ = velocityYRef.current > 0 ? 0.14 : -0.08;
       const jumpNeckZ = velocityYRef.current > 0 ? -0.1 : 0.06;
@@ -1021,39 +1039,53 @@ export default function ChibiPlayer({
       const neckZ = groundNeckZ * (1 - jw) + jumpNeckZ * jw;
       const neckY = sway * 0.008 * idleW * (1 - jw);
       const headX = Math.cos(idlePhase * 0.4) * 0.02 * idleW * (1 - jw);
-      applyBoneRotation(bones['Neck_05'], 0, neckY, neckZ);
-      applyBoneRotation(bones['Head_06'], headX, 0, headZ);
+      applyBoneRotation(bones['Neck_05'], 0, neckY, neckZ, boneSlerp);
+      applyBoneRotation(bones['Head_06'], headX, 0, headZ, boneSlerp);
 
       const walkBounce = Math.abs(cosCycle) * 0.035;
       const walkTilt = Math.sin(walkPhase) * 0.04;
       const idleBob = breath * 0.008;
 
-      meshRef.current.position.y =
-        (idleBob * idleW + walkBounce * w) * (1 - jw);
+      const targetMeshY = (idleBob * idleW + walkBounce * w) * (1 - jw);
+      meshRef.current.position.y = THREE.MathUtils.lerp(
+        meshRef.current.position.y,
+        targetMeshY,
+        Math.min(dt * 16.0, 1.0)
+      );
       meshRef.current.rotation.z = walkTilt * w * (1 - jw);
       meshRef.current.rotation.x = 0;
     } else {
-      // 액션 포즈 직접 적용
-      applyBoneRotation(bones['Left_UpLeg_00'], ...pose.leftThigh);
-      applyBoneRotation(bones['RightUpLeg_024'], ...pose.rightThigh);
-      applyBoneRotation(bones['Left_Leg_028'], ...pose.leftKnee);
-      applyBoneRotation(bones['RightLeg_025'], ...pose.rightKnee);
-      applyBoneRotation(bones['Left_Foot_029'], ...pose.leftFoot);
-      applyBoneRotation(bones['RightFoot_026'], ...pose.rightFoot);
+      // 액션 포즈 직접 적용 (어깨/손목 포함 전신 관절 부드러운 Slerp 보간)
+      applyBoneRotation(bones['Left_Shoulder_016'], ...pose.leftShoulder, boneSlerp);
+      applyBoneRotation(bones['RightShoulder_08'], ...pose.rightShoulder, boneSlerp);
 
-      applyBoneRotation(bones['Left_Arm_017'], ...pose.leftArm);
-      applyBoneRotation(bones['RightArm_09'], ...pose.rightArm);
-      applyBoneRotation(bones['Left_ForeArm_018'], ...pose.leftForearm);
-      applyBoneRotation(bones['RightForeArm_010'], ...pose.rightForearm);
+      applyBoneRotation(bones['Left_Arm_017'], ...pose.leftArm, boneSlerp);
+      applyBoneRotation(bones['RightArm_09'], ...pose.rightArm, boneSlerp);
+      applyBoneRotation(bones['Left_ForeArm_018'], ...pose.leftForearm, boneSlerp);
+      applyBoneRotation(bones['RightForeArm_010'], ...pose.rightForearm, boneSlerp);
 
-      applyBoneRotation(bones['Hips_01'], ...pose.hips);
-      applyBoneRotation(bones['Spine_02'], ...pose.spine);
-      applyBoneRotation(bones['Spine1_03'], ...pose.spine1);
-      applyBoneRotation(bones['Spine2_04'], ...pose.spine2);
-      applyBoneRotation(bones['Neck_05'], ...pose.neck);
-      applyBoneRotation(bones['Head_06'], ...pose.head);
+      applyBoneRotation(bones['Left_Hand_019'], ...pose.leftHand, boneSlerp);
+      applyBoneRotation(bones['RightHand_011'], ...pose.rightHand, boneSlerp);
 
-      meshRef.current.position.y = pose.meshOffsetY;
+      applyBoneRotation(bones['Left_UpLeg_00'], ...pose.leftThigh, boneSlerp);
+      applyBoneRotation(bones['RightUpLeg_024'], ...pose.rightThigh, boneSlerp);
+      applyBoneRotation(bones['Left_Leg_028'], ...pose.leftKnee, boneSlerp);
+      applyBoneRotation(bones['RightLeg_025'], ...pose.rightKnee, boneSlerp);
+      applyBoneRotation(bones['Left_Foot_029'], ...pose.leftFoot, boneSlerp);
+      applyBoneRotation(bones['RightFoot_026'], ...pose.rightFoot, boneSlerp);
+
+      applyBoneRotation(bones['Hips_01'], ...pose.hips, boneSlerp);
+      applyBoneRotation(bones['Spine_02'], ...pose.spine, boneSlerp);
+      applyBoneRotation(bones['Spine1_03'], ...pose.spine1, boneSlerp);
+      applyBoneRotation(bones['Spine2_04'], ...pose.spine2, boneSlerp);
+      applyBoneRotation(bones['Neck_05'], ...pose.neck, boneSlerp);
+      applyBoneRotation(bones['Head_06'], ...pose.head, boneSlerp);
+
+      meshRef.current.position.y = THREE.MathUtils.lerp(
+        meshRef.current.position.y,
+        pose.meshOffsetY,
+        Math.min(dt * 14.0, 1.0)
+      );
       meshRef.current.rotation.z = 0;
       meshRef.current.rotation.x = 0;
     }

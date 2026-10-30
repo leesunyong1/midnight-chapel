@@ -40,17 +40,24 @@ type BoneMap = Record<string, BoneEntry>;
 
 const scratchEuler = new THREE.Euler(0, 0, 0, 'XYZ');
 const scratchQuat = new THREE.Quaternion();
+const scratchTargetQuat = new THREE.Quaternion();
 
 function applyBoneRotation(
   entry: BoneEntry | undefined,
   x: number,
   y: number,
-  z: number
+  z: number,
+  slerpAlpha = 1.0
 ) {
   if (!entry) return;
   scratchEuler.set(x, y, z, 'XYZ');
   scratchQuat.setFromEuler(scratchEuler);
-  entry.bone.quaternion.copy(entry.restQuat).multiply(scratchQuat);
+  scratchTargetQuat.copy(entry.restQuat).multiply(scratchQuat);
+  if (slerpAlpha >= 1.0) {
+    entry.bone.quaternion.copy(scratchTargetQuat);
+  } else {
+    entry.bone.quaternion.slerp(scratchTargetQuat, slerpAlpha);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -177,30 +184,52 @@ function ChibiPreviewModel({
         faceControllerRef.current.update(dt, pose.isPraying);
       }
 
-      applyBoneRotation(bones['Left_UpLeg_00'], ...pose.leftThigh);
-      applyBoneRotation(bones['RightUpLeg_024'], ...pose.rightThigh);
-      applyBoneRotation(bones['Left_Leg_028'], ...pose.leftKnee);
-      applyBoneRotation(bones['RightLeg_025'], ...pose.rightKnee);
-      applyBoneRotation(bones['Left_Foot_029'], ...pose.leftFoot);
-      applyBoneRotation(bones['RightFoot_026'], ...pose.rightFoot);
-      applyBoneRotation(bones['Left_Arm_017'], ...pose.leftArm);
-      applyBoneRotation(bones['RightArm_09'], ...pose.rightArm);
-      applyBoneRotation(bones['Left_ForeArm_018'], ...pose.leftForearm);
-      applyBoneRotation(bones['RightForeArm_010'], ...pose.rightForearm);
-      applyBoneRotation(bones['Hips_01'], ...pose.hips);
-      applyBoneRotation(bones['Spine_02'], ...pose.spine);
-      applyBoneRotation(bones['Spine1_03'], ...pose.spine1);
-      applyBoneRotation(bones['Spine2_04'], ...pose.spine2);
-      applyBoneRotation(bones['Neck_05'], ...pose.neck);
-      applyBoneRotation(bones['Head_06'], ...pose.head);
+      const boneSlerp = Math.min(dt * 20.0, 1.0);
+
+      applyBoneRotation(bones['Left_Shoulder_016'], ...pose.leftShoulder, boneSlerp);
+      applyBoneRotation(bones['RightShoulder_08'], ...pose.rightShoulder, boneSlerp);
+
+      applyBoneRotation(bones['Left_Arm_017'], ...pose.leftArm, boneSlerp);
+      applyBoneRotation(bones['RightArm_09'], ...pose.rightArm, boneSlerp);
+      applyBoneRotation(bones['Left_ForeArm_018'], ...pose.leftForearm, boneSlerp);
+      applyBoneRotation(bones['RightForeArm_010'], ...pose.rightForearm, boneSlerp);
+
+      applyBoneRotation(bones['Left_Hand_019'], ...pose.leftHand, boneSlerp);
+      applyBoneRotation(bones['RightHand_011'], ...pose.rightHand, boneSlerp);
+
+      applyBoneRotation(bones['Left_UpLeg_00'], ...pose.leftThigh, boneSlerp);
+      applyBoneRotation(bones['RightUpLeg_024'], ...pose.rightThigh, boneSlerp);
+      applyBoneRotation(bones['Left_Leg_028'], ...pose.leftKnee, boneSlerp);
+      applyBoneRotation(bones['RightLeg_025'], ...pose.rightKnee, boneSlerp);
+      applyBoneRotation(bones['Left_Foot_029'], ...pose.leftFoot, boneSlerp);
+      applyBoneRotation(bones['RightFoot_026'], ...pose.rightFoot, boneSlerp);
+
+      applyBoneRotation(bones['Hips_01'], ...pose.hips, boneSlerp);
+      applyBoneRotation(bones['Spine_02'], ...pose.spine, boneSlerp);
+      applyBoneRotation(bones['Spine1_03'], ...pose.spine1, boneSlerp);
+      applyBoneRotation(bones['Spine2_04'], ...pose.spine2, boneSlerp);
+      applyBoneRotation(bones['Neck_05'], ...pose.neck, boneSlerp);
+      applyBoneRotation(bones['Head_06'], ...pose.head, boneSlerp);
 
       if (groupRef.current) {
-        groupRef.current.position.y = pose.meshOffsetY;
+        groupRef.current.position.y = THREE.MathUtils.lerp(
+          groupRef.current.position.y,
+          pose.meshOffsetY,
+          Math.min(dt * 14.0, 1.0)
+        );
       }
       return;
     }
 
-    if (groupRef.current) groupRef.current.position.y = 0;
+    if (groupRef.current) {
+      groupRef.current.position.y = THREE.MathUtils.lerp(
+        groupRef.current.position.y,
+        0,
+        Math.min(dt * 14.0, 1.0)
+      );
+    }
+
+    const previewSlerp = Math.min(dt * 20.0, 1.0);
 
     if (motionMode === 'idle') {
       // 자연스러운 정지 대기: 호흡, 은은한 스웨이, 고개 끄덕임, 옆구리로 내려놓은 팔
@@ -209,12 +238,18 @@ function ChibiPreviewModel({
       const sway = Math.sin(t * 1.05);
 
       // 다리 & 발 (바닥에 편안하게 접지)
-      applyBoneRotation(bones['Left_UpLeg_00'], 0, 0, 0);
-      applyBoneRotation(bones['RightUpLeg_024'], 0, 0, 0);
-      applyBoneRotation(bones['Left_Leg_028'], 0, 0, 0);
-      applyBoneRotation(bones['RightLeg_025'], 0, 0, 0);
-      applyBoneRotation(bones['Left_Foot_029'], 0, 0, 0);
-      applyBoneRotation(bones['RightFoot_026'], 0, 0, 0);
+      applyBoneRotation(bones['Left_UpLeg_00'], 0, 0, 0, previewSlerp);
+      applyBoneRotation(bones['RightUpLeg_024'], 0, 0, 0, previewSlerp);
+      applyBoneRotation(bones['Left_Leg_028'], 0, 0, 0, previewSlerp);
+      applyBoneRotation(bones['RightLeg_025'], 0, 0, 0, previewSlerp);
+      applyBoneRotation(bones['Left_Foot_029'], 0, 0, 0, previewSlerp);
+      applyBoneRotation(bones['RightFoot_026'], 0, 0, 0, previewSlerp);
+
+      // 어깨 및 손목 중립
+      applyBoneRotation(bones['Left_Shoulder_016'], 0, 0, 0, previewSlerp);
+      applyBoneRotation(bones['RightShoulder_08'], 0, 0, 0, previewSlerp);
+      applyBoneRotation(bones['Left_Hand_019'], 0, 0, 0, previewSlerp);
+      applyBoneRotation(bones['RightHand_011'], 0, 0, 0, previewSlerp);
 
       // 팔: 양옆으로 자연스럽게 내리고 편안하게 호흡에 맞춰 흔들림
       const leftArmIdleZ = 0.82 + sway * 0.015;
@@ -238,6 +273,12 @@ function ChibiPreviewModel({
       applyBoneRotation(bones['Neck_05'], 0, sway * 0.008, -breath * 0.012);
       applyBoneRotation(bones['Head_06'], Math.cos(t * 0.8) * 0.02, 0, -breath * 0.010);
     } else if (motionMode === 'walk') {
+      // 어깨 및 손목 중립
+      applyBoneRotation(bones['Left_Shoulder_016'], 0, 0, 0, previewSlerp);
+      applyBoneRotation(bones['RightShoulder_08'], 0, 0, 0, previewSlerp);
+      applyBoneRotation(bones['Left_Hand_019'], 0, 0, 0, previewSlerp);
+      applyBoneRotation(bones['RightHand_011'], 0, 0, 0, previewSlerp);
+
       // 씩씩한 제자리 걷기 모션
       const walkSpeed = 9.0;
       const phase = t * walkSpeed;
@@ -279,6 +320,12 @@ function ChibiPreviewModel({
       applyBoneRotation(bones['Neck_05'], 0, 0, -0.04);
       applyBoneRotation(bones['Head_06'], 0, 0, Math.abs(cosCycle) * 0.025);
     } else if (motionMode === 'jump') {
+      // 어깨 및 손목 중립
+      applyBoneRotation(bones['Left_Shoulder_016'], 0, 0, 0, previewSlerp);
+      applyBoneRotation(bones['RightShoulder_08'], 0, 0, 0, previewSlerp);
+      applyBoneRotation(bones['Left_Hand_019'], 0, 0, 0, previewSlerp);
+      applyBoneRotation(bones['RightHand_011'], 0, 0, 0, previewSlerp);
+
       // 귀여운 공중 체공 점프 포즈
       // 양다리 살짝 모으고 무릎 뒤로 접기
       applyBoneRotation(bones['Left_UpLeg_00'], 0, 0, -0.22);

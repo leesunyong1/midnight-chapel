@@ -47,7 +47,7 @@ export function generateCommunityCathedralSeats(): SeatTarget[] {
         seatPosition: [spot.x, 0.46, z],
         seatRotation: Math.PI, // 제단 및 십자가(음수 Z)를 정면으로 바라봄
         seatHeight: 0.46,
-        characterSitPosition: [spot.x, 0, z],
+        characterSitPosition: [spot.x, 0, z + 0.04],
         characterStandExitPosition: [spot.x, 0, z - 0.85], // 장의자 앞 통로로 안전하게 퇴장
         interactionRange: 1.35,
         isOccupied: false,
@@ -68,7 +68,7 @@ export function generateCommunityCathedralSeats(): SeatTarget[] {
         seatPosition: [spot.x, 0.46, z],
         seatRotation: Math.PI,
         seatHeight: 0.46,
-        characterSitPosition: [spot.x, 0, z],
+        characterSitPosition: [spot.x, 0, z + 0.04],
         characterStandExitPosition: [spot.x, 0, z - 0.85],
         interactionRange: 1.35,
         isOccupied: false,
@@ -147,3 +147,4 @@ export function findNearestSeat(
 
   return nearest;
 }
+

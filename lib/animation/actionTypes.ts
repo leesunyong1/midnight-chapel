@@ -151,3 +151,4 @@ export function isPrayingState(state: CharacterActionState): boolean {
 export function canCharacterMove(state: CharacterActionState): boolean {
   return ACTION_STATE_METAS[state].allowsMovement;
 }
+
