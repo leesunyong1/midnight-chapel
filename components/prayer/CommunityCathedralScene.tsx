@@ -13,6 +13,7 @@ import {
   getStainedGlassLancetTexture,
   getMarbleTexture,
 } from './proceduralTextures';
+import GrandGothicCrucifix from './GrandGothicCrucifix';
 
 // -------------------------------------------------------------
 // 공동 기도실 물리적 스펙 (30m × 45m × 20m) — 기존 충돌체 100% 유지
@@ -167,9 +168,11 @@ function GothicClusteredColumn({
 // 앤틱 교회 장의자 (폭 3.4m, 고딕 조각 측면 엔드패널, 찬송가 선반)
 function GothicGrandPew({
   position,
+  rotation = [0, 0, 0],
   woodTex,
 }: {
   position: [number, number, number];
+  rotation?: [number, number, number];
   woodTex: THREE.CanvasTexture;
 }) {
   const pewWoodMat = (
@@ -182,7 +185,7 @@ function GothicGrandPew({
   );
 
   return (
-    <group position={position}>
+    <group position={position} rotation={rotation}>
       {/* 1. 좌판 (폭 3.4m, 깊이 0.48m) */}
       <mesh position={[0, 0.42, 0]} castShadow receiveShadow>
         <boxGeometry args={[3.4, 0.08, 0.48]} />
@@ -489,10 +492,18 @@ export default function CommunityCathedralScene({
           ------------------------------------------------------------- */}
       {PEW_Z_ROWS.map((z, idx) => (
         <group key={`pew-row-${idx}`}>
-          {/* 좌측 장의자 */}
-          <GothicGrandPew position={[-4.5, 0, z]} woodTex={woodTex} />
-          {/* 우측 장의자 */}
-          <GothicGrandPew position={[4.5, 0, z]} woodTex={woodTex} />
+          {/* 좌측 장의자 - 제단 십자가 방향(음수 Z)을 향하도록 180도 회전 */}
+          <GothicGrandPew
+            position={[-4.5, 0, z]}
+            rotation={[0, Math.PI, 0]}
+            woodTex={woodTex}
+          />
+          {/* 우측 장의자 - 제단 십자가 방향(음수 Z)을 향하도록 180도 회전 */}
+          <GothicGrandPew
+            position={[4.5, 0, z]}
+            rotation={[0, Math.PI, 0]}
+            woodTex={woodTex}
+          />
 
           {/* 기둥과 장의자 사이 0.4m 틈새 통행 방지 고딕 목재 장벽 패널 */}
           <mesh position={[-6.7, 0.48, z]} castShadow receiveShadow>
@@ -590,40 +601,8 @@ export default function CommunityCathedralScene({
         </group>
       ))}
 
-      {/* 7m 대형 십자가 (북측 벽면) */}
-      <group position={[0, 8.5, -22.1]}>
-        <mesh castShadow>
-          <boxGeometry args={[0.42, 7.2, 0.2]} />
-          {darkWoodMat}
-        </mesh>
-        <mesh position={[0, 1.5, 0.03]} castShadow>
-          <boxGeometry args={[4.4, 0.42, 0.2]} />
-          {darkWoodMat}
-        </mesh>
-        <mesh position={[0, 0, -0.02]}>
-          <boxGeometry args={[0.48, 7.28, 0.16]} />
-          {goldMat}
-        </mesh>
-        <mesh position={[0, 1.5, -0.02]}>
-          <boxGeometry args={[4.48, 0.48, 0.16]} />
-          {goldMat}
-        </mesh>
-        <mesh position={[0, 1.5, -0.05]}>
-          <ringGeometry args={[1.5, 1.85, 36]} />
-          <meshStandardMaterial
-            color="#fbbf24"
-            emissive="#d97706"
-            emissiveIntensity={1.5}
-            side={THREE.DoubleSide}
-          />
-        </mesh>
-        <pointLight
-          position={[0, 1.5, 2.4]}
-          intensity={3.4}
-          color="#fde68a"
-          distance={12}
-        />
-      </group>
+      {/* 고난 십자가상 (Sacred Gothic Crucifix of Jesus Christ - 8.2m 대형 다크오크 & 예수 그리스도 성상) */}
+      <GrandGothicCrucifix position={[0, 8.5, -22.1]} />
 
       {/* -------------------------------------------------------------
           7. 스테인드글라스 (북측 직경 7m 장미창 & 측벽 12개 란셋 창문)

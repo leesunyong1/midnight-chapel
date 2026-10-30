@@ -158,7 +158,13 @@ export default function PrivatePrayer3DCanvas() {
     <div className="relative w-screen h-screen bg-[#090a0f] overflow-hidden select-none">
       {/* Three.js R3F 3D Canvas */}
       <Canvas
-        shadows
+        shadows={{ type: THREE.PCFSoftShadowMap }}
+        gl={{
+          antialias: true,
+          toneMapping: THREE.ACESFilmicToneMapping,
+          toneMappingExposure: 1.08,
+          powerPreference: 'high-performance',
+        }}
         camera={{ position: [0, 2.2, 7.2], fov: 48 }}
         className="w-full h-full"
       >
@@ -173,8 +179,9 @@ export default function PrivatePrayer3DCanvas() {
           intensity={1.2}
           color="#fef3c7"
           castShadow
-          shadow-mapSize={[1024, 1024]}
-          shadow-bias={-0.0005}
+          shadow-mapSize={[2048, 2048]}
+          shadow-bias={-0.0001}
+          shadow-normalBias={0.035}
         />
         {/* 뒤쪽 은은한 달빛 (쿨톤 림라이트) */}
         <directionalLight

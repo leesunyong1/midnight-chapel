@@ -397,7 +397,13 @@ export default function ChibiCharacterPreview() {
       {/* Three.js R3F 3D 캔버스 */}
       {!hasError ? (
         <Canvas
-          shadows
+          shadows={{ type: THREE.PCFSoftShadowMap }}
+          gl={{
+            antialias: true,
+            toneMapping: THREE.ACESFilmicToneMapping,
+            toneMappingExposure: 1.08,
+            powerPreference: 'high-performance',
+          }}
           camera={{ position: [0.75, 0.36, 0.95], fov: 45 }}
           className="w-full h-full"
         >
@@ -421,6 +427,8 @@ export default function ChibiCharacterPreview() {
             shadow-camera-right={1}
             shadow-camera-top={1}
             shadow-camera-bottom={-1}
+            shadow-bias={-0.0001}
+            shadow-normalBias={0.035}
           />
 
           {/* 3. 보조광 (시원한 쿨톤 필 라이트) */}

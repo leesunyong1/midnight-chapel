@@ -99,7 +99,13 @@ export default function CommunityPrayer3DCanvas() {
     <div className="relative w-screen h-screen bg-[#090a0f] overflow-hidden select-none">
       {/* Three.js R3F 3D Canvas */}
       <Canvas
-        shadows
+        shadows={{ type: THREE.PCFSoftShadowMap }}
+        gl={{
+          antialias: true,
+          toneMapping: THREE.ACESFilmicToneMapping,
+          toneMappingExposure: 1.08,
+          powerPreference: 'high-performance',
+        }}
         camera={{ position: [currentSpawn.x, 3.5, currentSpawn.z + 5.5], fov: 50 }}
         className="w-full h-full"
       >
@@ -121,7 +127,8 @@ export default function CommunityPrayer3DCanvas() {
           shadow-camera-right={20}
           shadow-camera-top={25}
           shadow-camera-bottom={-25}
-          shadow-bias={-0.0003}
+          shadow-bias={-0.0001}
+          shadow-normalBias={0.035}
         />
         {/* 고측창(Clerestory) 달빛 조명 */}
         <directionalLight
