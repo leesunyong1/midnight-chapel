@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 interface JumpButtonProps {
   onJump: () => void;
@@ -8,7 +8,10 @@ interface JumpButtonProps {
 /**
  * 모바일 및 터치 환경을 위한 직관적이고 반응성 높은 점프 액션 버튼
  */
-export default function JumpButton({ onJump, className = '' }: JumpButtonProps) {
+export default function JumpButton({
+  onJump,
+  className = "",
+}: JumpButtonProps) {
   return (
     <button
       type="button"
