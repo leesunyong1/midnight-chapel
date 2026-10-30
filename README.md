@@ -32,15 +32,23 @@ Next.js 16과 React Three Fiber(Three.js)를 기반으로 구축되었으며, �
   * 기둥/외벽 충돌 간섭 0건 검증, 중복 스폰 방지 및 가용 슬롯 자동 배정
   * 바닥 룬 링 마커 시각화 및 랜덤 스폰 테스트 UI 지원
 
-### 3. 🏃 캐릭터 및 물리 조작 시스템
-* **치비 캐릭터 (GLB Base Rigged SkinnedMesh)**:
-  * WASD, 방향키, 한글(ㅈ,ㄴ,ㅁ,ㅇ) 및 모바일 가상 조이스틱 완벽 지원
-  * 뒤뚱거리는 보행 바운스/틸트 및 숨쉬기 호흡 연출
+### 3. 🏃 캐릭터 관절 애니메이션 및 물리 조작 시스템
+* **치비 캐릭터 16개 관절 기반 애니메이션 (STEP 4)**:
+  * 단순 메쉬 흔들림이 아닌 GLB Skeleton 실제 Bone 회전 제어
+  * **다리**: 허벅지(`Left_UpLeg_00`, `RightUpLeg_024`) 양다리 교차 스윙, 무릎(`Left_Leg_028`, `RightLeg_025`) 후방 굽힘, 발목(`Left_Foot_029`, `RightFoot_026`) 착지 각도 제어
+  * **팔**: 상완(`Left_Arm_017`, `RightArm_09`) 다리 반대위상 교차 스윙, 전완/팔꿈치(`Left_ForeArm_018`, `RightForeArm_010`) 전방 굽힘
+  * **체간**: 골반(`Hips_01`) 롤/비틀림, 척추(`Spine_02`, `Spine1_03`, `Spine2_04`) 역보정 및 호흡 팽창, 목/머리(`Neck_05`, `Head_06`) 시선 수평 안정화
+  * **Rest Pose 상대 회전**: `restQuat.multiply(deltaQuat)` 기반으로 매 프레임 누적 오차 없이 원점 복귀
+  * **월드 변위 기반 보행 판정**: 벽이나 장애물에 가로막혀 실제 이동 거리가 0이면 자동으로 제자리걸음(문워크)을 차단하고 IDLE로 부드럽게 전이
+  * **Skeleton 독립성**: `SkeletonUtils.clone` 기반 다중 플레이어 독립 인스턴스 보장
+  * **Zero-GC**: `useFrame` 내 객체 생성 없이 재사용 스크래치 벡터/쿼터니언 활용
 * **축 분리 슬라이딩 충돌 (Sliding Collision)**:
   * 벽면, 장의자, 기둥 충돌 시 멈추지 않고 벽을 따라 미끄러지는 자연스러운 슬라이딩 물리
 * **3인칭 자유 궤도 카메라**:
   * 마우스 좌클릭/모바일 한 손가락 드래그 360° 시점 회전
   * 마우스 휠 스크롤 및 모바일 핀치 줌인/줌아웃
+* **크로스 플랫폼 입력**:
+  * WASD, 방향키, 한글 자음(ㅈ,ㄴ,ㅁ,ㅇ) 및 모바일 가상 조이스틱 완벽 지원
 
 ---
 
@@ -108,3 +116,4 @@ npm start
 ## 📄 라이선스
 
 * 3D Character Model: `Free Pack - Chibi Base Mesh (Rigged)` by DuNguyn Studio (CC-BY-4.0)
+
