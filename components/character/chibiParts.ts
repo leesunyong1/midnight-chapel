@@ -5,6 +5,8 @@ export interface ChibiCustomizationOptions {
   skinColor?: string;
   /** 피부 표면 거칠기 (기본값: 0.70) */
   skinRoughness?: number;
+  /** 머리카락 표시 여부 (기본값: false - 단정한 치비 민머리) */
+  showHair?: boolean;
   /** 머리카락 색상 (기본값: 자연스러운 다크 브라운 #382319) */
   hairColor?: string;
   /** 머리카락 표면 거칠기 (기본값: 0.58) */
@@ -301,6 +303,7 @@ export function setupChibiCharacterStyling(
     skinRoughness = 0.70,
     hairColor = '#382319', // 깊고 부드러운 다크 브라운
     hairRoughness = 0.58,
+    showHair = false,      // 머리카락 기본 삭제 (치비 민머리)
     blinkInterval = [3.5, 6.0],
     showEyebrows = true,
     showBlush = true,
@@ -368,14 +371,16 @@ export function setupChibiCharacterStyling(
   const localMatrix = new THREE.Matrix4().multiplyMatrices(invHeadBoneMatrix, targetWorldMatrix);
   localMatrix.decompose(headGroup.position, headGroup.quaternion, headGroup.scale);
 
-  // 4. 헤어 파츠 생성 및 부착
+  // 4. 헤어 파츠 (showHair가 true일 때만 부착, 기본값은 머리카락 삭제 상태)
   const hairMaterial = new THREE.MeshStandardMaterial({
     color: new THREE.Color(hairColor),
     roughness: hairRoughness,
     metalness: 0.04,
   });
-  const hairMesh = buildChibiHairMesh(hairMaterial);
-  headGroup.add(hairMesh);
+  if (showHair) {
+    const hairMesh = buildChibiHairMesh(hairMaterial);
+    headGroup.add(hairMesh);
+  }
 
   // 5. 눈 (Eyes) & 눈 깜빡임 시스템 생성
   const openEyeTex = createEyeTexture(false);

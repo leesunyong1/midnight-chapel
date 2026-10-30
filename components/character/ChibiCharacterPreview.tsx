@@ -11,6 +11,11 @@ import {
   ChibiFaceController,
   ChibiCustomizationOptions,
 } from './chibiParts';
+import {
+  getCharacterCustomization,
+  saveCharacterCustomization,
+  resetCharacterCustomization,
+} from '@/lib/storage/characterStorage';
 
 type MotionMode = 'static' | 'idle' | 'walk' | 'jump';
 type CameraAnglePreset = 'front' | 'quarter' | 'side' | 'back' | 'custom';
@@ -324,27 +329,64 @@ export default function ChibiCharacterPreview() {
   // 스타일 커스터마이징 상태
   const [skinColor, setSkinColor] = useState('#fcdcc5'); // 따뜻한 자연 베이지
   const [hairColor, setHairColor] = useState('#382319'); // 다크 브라운
+  const [showHair, setShowHair] = useState(false);      // 머리카락 기본 삭제 (치비 민머리)
   const [showEyebrows, setShowEyebrows] = useState(true);
   const [showBlush, setShowBlush] = useState(true);
   const [showMouth, setShowMouth] = useState(true);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // 뷰어 설정
+  // 뷰어 검사 모드 설정
   const [wireframe, setWireframe] = useState(false);
   const [showSkeleton, setShowSkeleton] = useState(false);
   const [autoRotate, setAutoRotate] = useState(false);
   const [showInfo, setShowInfo] = useState(true);
   const [hasError, setHasError] = useState(false);
 
+  // 로컬 스토리지에 저장된 사용자 캐릭터 외형 불러오기
+  useEffect(() => {
+    const saved = getCharacterCustomization();
+    if (saved) {
+      if (saved.skinColor) setSkinColor(saved.skinColor);
+      if (saved.hairColor) setHairColor(saved.hairColor);
+      if (typeof saved.showHair === 'boolean') setShowHair(saved.showHair);
+      if (typeof saved.showEyebrows === 'boolean') setShowEyebrows(saved.showEyebrows);
+      if (typeof saved.showBlush === 'boolean') setShowBlush(saved.showBlush);
+      if (typeof saved.showMouth === 'boolean') setShowMouth(saved.showMouth);
+    }
+  }, []);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
   const customizationOptions: ChibiCustomizationOptions = useMemo(
     () => ({
       skinColor,
       hairColor,
+      showHair,
       showEyebrows,
       showBlush,
       showMouth,
     }),
-    [skinColor, hairColor, showEyebrows, showBlush, showMouth]
+    [skinColor, hairColor, showHair, showEyebrows, showBlush, showMouth]
   );
+
+  const handleSave = () => {
+    saveCharacterCustomization(customizationOptions);
+    showToast('✨ 캐릭터 외형이 저장되었습니다! 성당 입장 시 자동으로 적용됩니다.');
+  };
+
+  const handleReset = () => {
+    const def = resetCharacterCustomization();
+    setSkinColor(def.skinColor || '#fcdcc5');
+    setHairColor(def.hairColor || '#382319');
+    setShowHair(false);
+    setShowEyebrows(true);
+    setShowBlush(true);
+    setShowMouth(true);
+    showToast('기본 외형으로 초기화되었습니다.');
+  };
 
   return (
     <div className="relative w-screen h-screen bg-[#090a0f] overflow-hidden select-none font-sans">
@@ -590,11 +632,20 @@ export default function ChibiCharacterPreview() {
           </p>
         </div>
 
-        {/* 3. 스타일 커스터마이징 */}
+        {/* 3. 스타일 커스터마이징 및 로컬 저장 */}
         <div className="rounded-2xl border border-stone-800/80 bg-stone-950/85 backdrop-blur-xl p-4 shadow-xl space-y-3">
-          <span className="text-[11px] font-medium text-emerald-400 block">
-            🎨 외형 팔레트 (1단계)
-          </span>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-emerald-400 block">
+              🎨 외형 커스텀 & 저장
+            </span>
+            <button
+              onClick={handleReset}
+              className="text-[10px] text-stone-500 hover:text-stone-300 transition-colors"
+              title="초기 상태로 되돌리기"
+            >
+              초기화
+            </button>
+          </div>
 
           {/* 피부 톤 선택 */}
           <div>
@@ -604,14 +655,15 @@ export default function ChibiCharacterPreview() {
                 { name: '따뜻한 베이지', color: '#fcdcc5' },
                 { name: '복숭아 아이보리', color: '#ffebd9' },
                 { name: '내추럴 샌드', color: '#edd0b6' },
+                { name: '웜 탠', color: '#d49b78' },
               ].map((skin) => (
                 <button
                   key={skin.color}
                   onClick={() => setSkinColor(skin.color)}
                   title={skin.name}
-                  className={`w-7 h-7 rounded-full transition-transform border ${
+                  className={`w-6 h-6 rounded-full transition-transform border ${
                     skinColor === skin.color
-                      ? 'scale-110 border-white ring-2 ring-emerald-400/50'
+                      ? 'scale-115 border-white ring-2 ring-emerald-400/50'
                       : 'border-stone-700 hover:scale-105'
                   }`}
                   style={{ backgroundColor: skin.color }}
@@ -620,32 +672,7 @@ export default function ChibiCharacterPreview() {
             </div>
           </div>
 
-          {/* 헤어 컬러 선택 */}
-          <div>
-            <span className="text-[10px] text-stone-400 block mb-1.5">헤어 컬러</span>
-            <div className="flex items-center gap-2">
-              {[
-                { name: '다크 브라운', color: '#382319' },
-                { name: '밀크 초코', color: '#543220' },
-                { name: '미드나잇 블랙', color: '#1c1622' },
-                { name: '골든 허니', color: '#8f5832' },
-              ].map((hair) => (
-                <button
-                  key={hair.color}
-                  onClick={() => setHairColor(hair.color)}
-                  title={hair.name}
-                  className={`w-7 h-7 rounded-full transition-transform border ${
-                    hairColor === hair.color
-                      ? 'scale-110 border-white ring-2 ring-emerald-400/50'
-                      : 'border-stone-700 hover:scale-105'
-                  }`}
-                  style={{ backgroundColor: hair.color }}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* 표정 요소 온/오프 토글 */}
+          {/* 표정 요소 및 머리카락 온/오프 토글 */}
           <div className="pt-2 border-t border-stone-800/60 space-y-1.5 text-[11px]">
             <label className="flex items-center justify-between text-stone-400 cursor-pointer">
               <span>눈썹 (Eyebrows)</span>
@@ -674,6 +701,72 @@ export default function ChibiCharacterPreview() {
                 className="rounded accent-emerald-500 cursor-pointer"
               />
             </label>
+            <label className="flex items-center justify-between text-stone-400 cursor-pointer pt-1 border-t border-stone-800/40">
+              <span className="flex items-center gap-1">
+                <span>머리카락 표시</span>
+                <span className="text-[9px] text-stone-500">(기본: 민머리)</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={showHair}
+                onChange={(e) => setShowHair(e.target.checked)}
+                className="rounded accent-emerald-500 cursor-pointer"
+              />
+            </label>
+
+            {/* 머리카락 표시가 켜진 경우에만 헤어 컬러 선택기 노출 */}
+            {showHair && (
+              <div className="pt-1.5 animate-fade-in">
+                <span className="text-[10px] text-stone-400 block mb-1">헤어 컬러</span>
+                <div className="flex items-center gap-1.5">
+                  {[
+                    { name: '다크 브라운', color: '#382319' },
+                    { name: '밀크 초코', color: '#543220' },
+                    { name: '미드나잇 블랙', color: '#1c1622' },
+                    { name: '골든 허니', color: '#8f5832' },
+                  ].map((hair) => (
+                    <button
+                      key={hair.color}
+                      onClick={() => setHairColor(hair.color)}
+                      title={hair.name}
+                      className={`w-5 h-5 rounded-full transition-transform border ${
+                        hairColor === hair.color
+                          ? 'scale-115 border-white ring-2 ring-emerald-400/50'
+                          : 'border-stone-700 hover:scale-105'
+                      }`}
+                      style={{ backgroundColor: hair.color }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 저장 버튼 (localStorage 영구 보관 & 성당 자동 반영) */}
+          <div className="pt-2 border-t border-stone-800/60 space-y-2">
+            <button
+              onClick={handleSave}
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 font-medium text-xs shadow-lg active:scale-95 transition-all flex items-center justify-center gap-1.5"
+            >
+              <span>💾</span>
+              <span>이 모습으로 저장하기</span>
+            </button>
+
+            {/* 성당 바로가기 링크 */}
+            <div className="grid grid-cols-2 gap-1.5 pt-1">
+              <Link
+                href="/private-prayer"
+                className="py-1.5 rounded-lg text-center text-[10px] bg-stone-900/80 hover:bg-stone-800 text-amber-300/90 border border-amber-500/30 transition-all"
+              >
+                🕯️ 개인 기도실
+              </Link>
+              <Link
+                href="/community-prayer"
+                className="py-1.5 rounded-lg text-center text-[10px] bg-stone-900/80 hover:bg-stone-800 text-sky-300/90 border border-sky-500/30 transition-all"
+              >
+                🏛️ 공동 기도실
+              </Link>
+            </div>
           </div>
         </div>
       </aside>
@@ -851,6 +944,18 @@ export default function ChibiCharacterPreview() {
         <p>• 마우스 휠 스크롤: 확대 / 축소</p>
         <p>• 마우스 우클릭 드래그: 시점 이동 (Pan)</p>
       </div>
+
+      {/* 저장 완료 알림 토스트 */}
+      {toastMessage && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 rounded-full border border-amber-500/30 bg-[#0d0f17]/95 backdrop-blur-md px-5 py-2.5 text-xs font-light text-amber-200 shadow-2xl animate-fade-in flex items-center gap-2"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
     </div>
   );
 }

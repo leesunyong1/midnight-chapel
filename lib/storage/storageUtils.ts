@@ -9,6 +9,7 @@ export const STORAGE_KEYS = {
   MEDITATIONS: 'sanctuary:meditations:v1',
   VISITOR: 'sanctuary:visitor:v1',
   SUPPORTED_INTENTIONS: 'sanctuary:community:supported:v1',
+  CHARACTER: 'sanctuary:character:customization:v1',
 } as const;
 
 /**

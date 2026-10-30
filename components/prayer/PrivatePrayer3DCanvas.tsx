@@ -24,6 +24,8 @@ import {
   updatePrayerRecord,
   deletePrayerRecord,
 } from '@/lib/storage/prayerStorage';
+import { getCharacterCustomization } from '@/lib/storage/characterStorage';
+import { ChibiCustomizationOptions } from '@/components/character/chibiParts';
 import { CandleState, PrayerRecord } from '@/types';
 
 const PRIVATE_INITIAL_POS: [number, number, number] = [0, 0, 4.0];
@@ -48,6 +50,7 @@ export default function PrivatePrayer3DCanvas() {
   // 촛불 및 기도문 상태 관리 (기존 스토리지 재사용)
   const [candle, setCandle] = useState<CandleState | null>(null);
   const [prayers, setPrayers] = useState<PrayerRecord[]>([]);
+  const [characterCustomization, setCharacterCustomization] = useState<ChibiCustomizationOptions | undefined>(undefined);
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
   const [isHistoryDrawerOpen, setIsHistoryDrawerOpen] = useState(false);
   const [editingPrayer, setEditingPrayer] = useState<PrayerRecord | null>(null);
@@ -63,12 +66,13 @@ export default function PrivatePrayer3DCanvas() {
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
-  // 마운트 시 기존 촛불 및 기도 기록 로드
+  // 마운트 시 기존 촛불 및 기도 기록, 캐릭터 커스텀 설정 로드
   useEffect(() => {
     try {
       const initialCandle = getOrCreateDefaultCandle();
       setCandle(initialCandle);
       setPrayers(getPrayerRecords());
+      setCharacterCustomization(getCharacterCustomization());
     } catch (err) {
       console.error('Failed to load storage', err);
     }
@@ -194,6 +198,7 @@ export default function PrivatePrayer3DCanvas() {
             initialPosition={PRIVATE_INITIAL_POS}
             initialRotationY={Math.PI}
             playerRadius={0.35}
+            customization={characterCustomization}
           />
         </Suspense>
 
@@ -336,8 +341,13 @@ export default function PrivatePrayer3DCanvas() {
             </button>
           )}
 
-          {/* 모바일 터치 점프 버튼 */}
-          <JumpButton onJump={() => { jumpRef.current = true; }} />
+          {/* 모바일 터치 점프 버튼 (컴퓨터 데스크탑에서는 스페이스바 사용하므로 숨김) */}
+          <JumpButton
+            onJump={() => {
+              jumpRef.current = true;
+            }}
+            className="md:hidden"
+          />
         </div>
 
         {/* 조작 간단 설명 박스 (은은한 반투명 오파시티 + X 닫기 지원) */}

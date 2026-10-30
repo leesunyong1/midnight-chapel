@@ -1,10 +1,12 @@
 'use client';
 
-import { Suspense, useState, useRef, useCallback, useMemo } from 'react';
+import { Suspense, useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
 import Link from 'next/link';
 import ChibiPlayer, { PlayerDebugInfo } from '@/components/character/ChibiPlayer';
+import { ChibiCustomizationOptions } from '@/components/character/chibiParts';
+import { getCharacterCustomization } from '@/lib/storage/characterStorage';
 import VirtualJoystick from '@/components/ui/VirtualJoystick';
 import JumpButton from '@/components/ui/JumpButton';
 import ThirdPersonCamera from './ThirdPersonCamera';
@@ -45,6 +47,13 @@ export default function CommunityPrayer3DCanvas() {
 
   // 모바일/데스크탑 조작 안내 박스 표시 상태 (사용자가 X를 눌러 닫을 수 있음)
   const [showGuide, setShowGuide] = useState(true);
+
+  // 브라우저에 저장된 캐릭터 외형 설정 로드
+  const [characterCustomization, setCharacterCustomization] = useState<ChibiCustomizationOptions | undefined>(undefined);
+
+  useEffect(() => {
+    setCharacterCustomization(getCharacterCustomization());
+  }, []);
 
   // 토스트 메시지
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -141,6 +150,7 @@ export default function CommunityPrayer3DCanvas() {
             initialPosition={initialPos}
             initialRotationY={Math.PI}
             playerRadius={0.35}
+            customization={characterCustomization}
           />
         </Suspense>
 
@@ -224,8 +234,8 @@ export default function CommunityPrayer3DCanvas() {
           하단 조작 가이드 & 액션 (우측 하단: 은은한 반투명 + X 닫기 지원)
           ======================================================== */}
       <footer className="absolute bottom-6 right-6 z-20 flex flex-col items-end gap-2.5 pointer-events-none">
-        {/* 점프 액션 버튼 (모바일 및 터치 환경 지원) */}
-        <div className="pointer-events-auto">
+        {/* 점프 액션 버튼 (컴퓨터 데스크탑 환경에서는 스페이스바 사용하므로 숨김) */}
+        <div className="pointer-events-auto md:hidden">
           <JumpButton onJump={() => { jumpRef.current = true; }} />
         </div>
 
