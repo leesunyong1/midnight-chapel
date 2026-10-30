@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect, useRef, useCallback } from 'react';
+import { Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
 import Link from 'next/link';
@@ -27,6 +27,9 @@ import {
 import { getCharacterCustomization } from '@/lib/storage/characterStorage';
 import { ChibiCustomizationOptions } from '@/components/character/chibiParts';
 import { CandleState, PrayerRecord } from '@/types';
+import { generatePrivateChapelSeats, SeatTarget } from '@/lib/animation/seatSystem';
+import { CharacterActionState } from '@/lib/animation/actionTypes';
+import WorshipActionBar from '@/components/ui/WorshipActionBar';
 
 const PRIVATE_INITIAL_POS: [number, number, number] = [0, 0, 4.0];
 
@@ -43,6 +46,12 @@ export default function PrivatePrayer3DCanvas() {
   const playerPosRef = useRef(new THREE.Vector3(0, 0, 4.0));
   const [coords, setCoords] = useState({ x: 0, z: 4.0 });
   const [nearAltar, setNearAltar] = useState(false);
+
+  // 예배 행동 시스템 상태
+  const privateSeats = useMemo(() => generatePrivateChapelSeats(), []);
+  const [currentAction, setCurrentAction] = useState<CharacterActionState>('idle');
+  const [nearestSeat, setNearestSeat] = useState<SeatTarget | null>(null);
+  const actionTriggerRef = useRef<((action: CharacterActionState, seat?: SeatTarget) => boolean) | null>(null);
 
   // 모바일/데스크탑 조작 안내 박스 표시 상태 (X 클릭으로 닫기 가능)
   const [showGuide, setShowGuide] = useState(true);
@@ -193,7 +202,7 @@ export default function PrivatePrayer3DCanvas() {
         {/* 3D 개인 성당 내부 건축물 (12m × 16m × 7.5m, 촛불 상태 반영) */}
         <PrivateChapelScene isCandleLit={isLit} />
 
-        {/* 3D 치비 플레이어 캐릭터 (슬라이딩 충돌 + 경계 제한 + 점프) */}
+        {/* 3D 치비 플레이어 캐릭터 (슬라이딩 충돌 + 경계 제한 + 점프 + 예배 행동 시스템) */}
         <Suspense fallback={null}>
           <ChibiPlayer
             inputRef={inputRef}
@@ -206,6 +215,10 @@ export default function PrivatePrayer3DCanvas() {
             initialRotationY={Math.PI}
             playerRadius={0.35}
             customization={characterCustomization}
+            availableSeats={privateSeats}
+            onNearestSeatChange={setNearestSeat}
+            onActionStateChange={setCurrentAction}
+            actionTriggerRef={actionTriggerRef}
           />
         </Suspense>
 
@@ -406,6 +419,23 @@ export default function PrivatePrayer3DCanvas() {
           </button>
         )}
       </footer>
+
+      {/* ========================================================
+          하단 중앙: 예배 상호작용 및 행동 바 (Worship Action Bar)
+          ======================================================== */}
+      <WorshipActionBar
+        currentAction={currentAction}
+        nearestSeat={nearestSeat}
+        onTriggerAction={(action, seat) => {
+          if (actionTriggerRef.current) {
+            actionTriggerRef.current(action, seat);
+          } else {
+            window.dispatchEvent(
+              new CustomEvent('player-action', { detail: { action, seat } })
+            );
+          }
+        }}
+      />
 
       {/* ========================================================
           기도문 작성 모달 & 나의 기도 기록 드로어

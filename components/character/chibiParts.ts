@@ -33,7 +33,7 @@ export interface ChibiCustomizationOptions {
 
 export interface ChibiFaceController {
   /** 매 프레임 useFrame에서 호출하여 자연스러운 눈 깜빡임 및 얼굴 표현 업데이트 */
-  update: (dt: number) => void;
+  update: (dt: number, isPraying?: boolean) => void;
   /** 머리카락 머티리얼 참조 (동적 색상 변경 지원) */
   hairMaterial: THREE.MeshStandardMaterial;
   /** 피부 머티리얼 참조 */
@@ -493,7 +493,23 @@ export function setupChibiCharacterStyling(
   let blinkTimer = 0;
   const BLINK_DURATION = 0.14; // 깜빡임 총 소요시간 140ms (빠르고 자연스러운 눈 깜빡임)
 
-  const update = (dt: number) => {
+  const update = (dt: number, isPraying = false) => {
+    if (isPraying) {
+      // 기도 중일 때는 경건하고 평화롭게 눈을 감음
+      if (originalEyeMesh) originalEyeMesh.visible = false;
+      leftEye.visible = true;
+      rightEye.visible = true;
+      leftEye.scale.y = 1.0;
+      rightEye.scale.y = 1.0;
+      if (leftEyeMat.map !== closedEyeTex) {
+        leftEyeMat.map = closedEyeTex;
+        rightEyeMat.map = closedEyeTex;
+        leftEyeMat.needsUpdate = true;
+        rightEyeMat.needsUpdate = true;
+      }
+      return;
+    }
+
     if (!isBlinking) {
       timeUntilNextBlink -= dt;
       if (timeUntilNextBlink <= 0) {

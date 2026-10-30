@@ -19,6 +19,9 @@ import {
   SpawnPoint,
   getAvailableSpawnPoint,
 } from './spawnSystem';
+import { generateCommunityCathedralSeats, SeatTarget } from '@/lib/animation/seatSystem';
+import { CharacterActionState } from '@/lib/animation/actionTypes';
+import WorshipActionBar from '@/components/ui/WorshipActionBar';
 
 export default function CommunityPrayer3DCanvas() {
   // 모바일 조이스틱 입력 Ref
@@ -28,6 +31,14 @@ export default function CommunityPrayer3DCanvas() {
 
   // 카메라 수평 회전 각도 Ref
   const cameraYawRef = useRef(0);
+
+  // 액션 트리거 ref
+  const actionTriggerRef = useRef<((action: CharacterActionState, seat?: SeatTarget) => boolean) | null>(null);
+  const [currentAction, setCurrentAction] = useState<CharacterActionState>('idle');
+  const [nearestSeat, setNearestSeat] = useState<SeatTarget | null>(null);
+
+  // 대성당 장의자 좌석 목록 (총 48개)
+  const cathedralSeats = useMemo(() => generateCommunityCathedralSeats(), []);
 
   // 60개 스폰 지점 중 초기 스폰 지점 선택 (중앙 기본 지점: id=22 -> x=0, z=18.5)
   const [currentSpawn, setCurrentSpawn] = useState<SpawnPoint>(() =>
@@ -143,7 +154,7 @@ export default function CommunityPrayer3DCanvas() {
           selectedSpawnId={currentSpawn.id}
         />
 
-        {/* 3D 치비 플레이어 캐릭터 (스폰 시스템 연동 + 슬라이딩 충돌 + 점프) */}
+        {/* 3D 치비 플레이어 캐릭터 (스폰 시스템 연동 + 슬라이딩 충돌 + 점프 + 예배 행동 시스템) */}
         <Suspense fallback={null}>
           <ChibiPlayer
             key={`player-spawn-${currentSpawn.id}`}
@@ -158,6 +169,10 @@ export default function CommunityPrayer3DCanvas() {
             initialRotationY={Math.PI}
             playerRadius={0.35}
             customization={characterCustomization}
+            availableSeats={cathedralSeats}
+            onNearestSeatChange={setNearestSeat}
+            onActionStateChange={setCurrentAction}
+            actionTriggerRef={actionTriggerRef}
           />
         </Suspense>
 
@@ -273,6 +288,18 @@ export default function CommunityPrayer3DCanvas() {
                 <span className="font-mono text-stone-200">Space / 점프 버튼</span>
               </p>
               <p className="flex items-center justify-between">
+                <span className="text-stone-400">앉기/일어서기</span>
+                <span className="font-mono text-amber-300">E</span>
+              </p>
+              <p className="flex items-center justify-between">
+                <span className="text-stone-400">기도</span>
+                <span className="font-mono text-amber-300">Q / 1 (서서) / 2 (무릎)</span>
+              </p>
+              <p className="flex items-center justify-between">
+                <span className="text-stone-400">인사</span>
+                <span className="font-mono text-sky-300">3 (손흔들기) / 4 (경배)</span>
+              </p>
+              <p className="flex items-center justify-between">
                 <span className="text-stone-400">시점</span>
                 <span>화면 드래그 (360°)</span>
               </p>
@@ -289,6 +316,23 @@ export default function CommunityPrayer3DCanvas() {
           </button>
         )}
       </footer>
+
+      {/* ========================================================
+          하단 중앙: 예배 상호작용 및 행동 바 (Worship Action Bar)
+          ======================================================== */}
+      <WorshipActionBar
+        currentAction={currentAction}
+        nearestSeat={nearestSeat}
+        onTriggerAction={(action, seat) => {
+          if (actionTriggerRef.current) {
+            actionTriggerRef.current(action, seat);
+          } else {
+            window.dispatchEvent(
+              new CustomEvent('player-action', { detail: { action, seat } })
+            );
+          }
+        }}
+      />
 
       {/* 토스트 알림 */}
       {toastMessage && (

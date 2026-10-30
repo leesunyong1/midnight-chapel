@@ -16,8 +16,20 @@ import {
   saveCharacterCustomization,
   resetCharacterCustomization,
 } from '@/lib/storage/characterStorage';
+import { computeActionPose } from '@/lib/animation/characterActionPose';
 
-type MotionMode = 'static' | 'idle' | 'walk' | 'jump';
+type MotionMode =
+  | 'static'
+  | 'idle'
+  | 'walk'
+  | 'jump'
+  | 'standing_pray'
+  | 'sitting_idle'
+  | 'sitting_pray'
+  | 'kneeling_idle'
+  | 'kneeling_pray'
+  | 'wave'
+  | 'bow';
 type CameraAnglePreset = 'front' | 'quarter' | 'side' | 'back' | 'custom';
 
 interface BoneEntry {
@@ -142,8 +154,53 @@ function ChibiPreviewModel({
       Object.values(bones).forEach((entry) => {
         entry.bone.quaternion.copy(entry.restQuat);
       });
+      if (groupRef.current) groupRef.current.position.y = 0;
       return;
     }
+
+    if (
+      motionMode === 'standing_pray' ||
+      motionMode === 'sitting_idle' ||
+      motionMode === 'sitting_pray' ||
+      motionMode === 'kneeling_idle' ||
+      motionMode === 'kneeling_pray' ||
+      motionMode === 'wave' ||
+      motionMode === 'bow'
+    ) {
+      const breathPhase = t * 2.1;
+      const breath = Math.sin(breathPhase);
+      const sway = Math.sin(t * 1.05);
+      const loopTime = motionMode === 'wave' || motionMode === 'bow' ? t % 2.5 : t;
+      const pose = computeActionPose(motionMode as any, loopTime, t, breath, sway);
+
+      if (faceControllerRef.current) {
+        faceControllerRef.current.update(dt, pose.isPraying);
+      }
+
+      applyBoneRotation(bones['Left_UpLeg_00'], ...pose.leftThigh);
+      applyBoneRotation(bones['RightUpLeg_024'], ...pose.rightThigh);
+      applyBoneRotation(bones['Left_Leg_028'], ...pose.leftKnee);
+      applyBoneRotation(bones['RightLeg_025'], ...pose.rightKnee);
+      applyBoneRotation(bones['Left_Foot_029'], ...pose.leftFoot);
+      applyBoneRotation(bones['RightFoot_026'], ...pose.rightFoot);
+      applyBoneRotation(bones['Left_Arm_017'], ...pose.leftArm);
+      applyBoneRotation(bones['RightArm_09'], ...pose.rightArm);
+      applyBoneRotation(bones['Left_ForeArm_018'], ...pose.leftForearm);
+      applyBoneRotation(bones['RightForeArm_010'], ...pose.rightForearm);
+      applyBoneRotation(bones['Hips_01'], ...pose.hips);
+      applyBoneRotation(bones['Spine_02'], ...pose.spine);
+      applyBoneRotation(bones['Spine1_03'], ...pose.spine1);
+      applyBoneRotation(bones['Spine2_04'], ...pose.spine2);
+      applyBoneRotation(bones['Neck_05'], ...pose.neck);
+      applyBoneRotation(bones['Head_06'], ...pose.head);
+
+      if (groupRef.current) {
+        groupRef.current.position.y = pose.meshOffsetY;
+      }
+      return;
+    }
+
+    if (groupRef.current) groupRef.current.position.y = 0;
 
     if (motionMode === 'idle') {
       // 자연스러운 정지 대기: 호흡, 은은한 스웨이, 고개 끄덕임, 옆구리로 내려놓은 팔
@@ -543,12 +600,12 @@ export default function ChibiCharacterPreview() {
         {/* 1. 동작 모션 선택 */}
         <div className="rounded-2xl border border-stone-800/80 bg-stone-950/85 backdrop-blur-xl p-4 shadow-xl">
           <span className="text-[11px] font-medium text-amber-400 block mb-2.5">
-            🎬 실시간 모션 테스트
+            🎬 기본 동작 테스트
           </span>
-          <div className="grid grid-cols-2 gap-1.5">
+          <div className="grid grid-cols-2 gap-1.5 mb-3">
             <button
               onClick={() => setMotionMode('idle')}
-              className={`px-2.5 py-1.5 rounded-xl text-center text-xs transition-all ${
+              className={`px-2 py-1.5 rounded-xl text-center text-xs transition-all ${
                 motionMode === 'idle'
                   ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40 font-medium'
                   : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
@@ -558,7 +615,7 @@ export default function ChibiCharacterPreview() {
             </button>
             <button
               onClick={() => setMotionMode('walk')}
-              className={`px-2.5 py-1.5 rounded-xl text-center text-xs transition-all ${
+              className={`px-2 py-1.5 rounded-xl text-center text-xs transition-all ${
                 motionMode === 'walk'
                   ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40 font-medium'
                   : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
@@ -568,7 +625,7 @@ export default function ChibiCharacterPreview() {
             </button>
             <button
               onClick={() => setMotionMode('jump')}
-              className={`px-2.5 py-1.5 rounded-xl text-center text-xs transition-all ${
+              className={`px-2 py-1.5 rounded-xl text-center text-xs transition-all ${
                 motionMode === 'jump'
                   ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40 font-medium'
                   : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
@@ -578,7 +635,7 @@ export default function ChibiCharacterPreview() {
             </button>
             <button
               onClick={() => setMotionMode('static')}
-              className={`px-2.5 py-1.5 rounded-xl text-center text-xs transition-all ${
+              className={`px-2 py-1.5 rounded-xl text-center text-xs transition-all ${
                 motionMode === 'static'
                   ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40 font-medium'
                   : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
@@ -587,8 +644,84 @@ export default function ChibiCharacterPreview() {
               정지 (A-Pose)
             </button>
           </div>
+
+          <span className="text-[11px] font-medium text-emerald-400 block mb-2">
+            ⛪ 예배 & 상호작용 행동
+          </span>
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              onClick={() => setMotionMode('standing_pray')}
+              className={`px-2 py-1.5 rounded-xl text-center text-xs transition-all ${
+                motionMode === 'standing_pray'
+                  ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 font-medium'
+                  : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
+              }`}
+            >
+              🕊️ 서서 기도
+            </button>
+            <button
+              onClick={() => setMotionMode('sitting_idle')}
+              className={`px-2 py-1.5 rounded-xl text-center text-xs transition-all ${
+                motionMode === 'sitting_idle'
+                  ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 font-medium'
+                  : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
+              }`}
+            >
+              🪑 의자 앉기
+            </button>
+            <button
+              onClick={() => setMotionMode('sitting_pray')}
+              className={`px-2 py-1.5 rounded-xl text-center text-xs transition-all ${
+                motionMode === 'sitting_pray'
+                  ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 font-medium'
+                  : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
+              }`}
+            >
+              🙏 앉아서 기도
+            </button>
+            <button
+              onClick={() => setMotionMode('kneeling_idle')}
+              className={`px-2 py-1.5 rounded-xl text-center text-xs transition-all ${
+                motionMode === 'kneeling_idle'
+                  ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 font-medium'
+                  : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
+              }`}
+            >
+              🛐 무릎 꿇기
+            </button>
+            <button
+              onClick={() => setMotionMode('kneeling_pray')}
+              className={`px-2 py-1.5 rounded-xl text-center text-xs transition-all ${
+                motionMode === 'kneeling_pray'
+                  ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 font-medium'
+                  : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
+              }`}
+            >
+              ✨ 무릎 기도
+            </button>
+            <button
+              onClick={() => setMotionMode('wave')}
+              className={`px-2 py-1.5 rounded-xl text-center text-xs transition-all ${
+                motionMode === 'wave'
+                  ? 'bg-sky-500/25 text-sky-300 border border-sky-500/40 font-medium'
+                  : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
+              }`}
+            >
+              🙋 손 흔들기
+            </button>
+            <button
+              onClick={() => setMotionMode('bow')}
+              className={`col-span-2 px-2 py-1.5 rounded-xl text-center text-xs transition-all ${
+                motionMode === 'bow'
+                  ? 'bg-sky-500/25 text-sky-300 border border-sky-500/40 font-medium'
+                  : 'bg-stone-900/70 text-stone-400 border border-stone-800/60 hover:text-stone-200'
+              }`}
+            >
+              🙇 공손한 인사 (Bow)
+            </button>
+          </div>
           <p className="mt-2 text-[10px] text-stone-500">
-            ※ 관절 회전 중에도 눈 깜빡임과 표정이 100% 동기화됩니다.
+            ※ 기도 중에는 경건하게 두 손을 모으고 눈을 감습니다.
           </p>
         </div>
 
